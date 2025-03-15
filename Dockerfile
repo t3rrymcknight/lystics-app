@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/*
 
 # Set a working directory (folder) inside the container
-WORKDIR /app
+WORKDIR /
 
 # Copy in the requirements
 COPY requirements.txt .
