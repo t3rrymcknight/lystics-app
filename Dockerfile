@@ -1,25 +1,25 @@
-# Use the official Python base image
+# Use the official Python slim image
 FROM python:3.9-slim
 
-# Set the working directory
+# Install OS dependencies required by Pillow
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libjpeg-dev \
+    zlib1g-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+# Create a working directory
 WORKDIR /app
 
-# Install any system dependencies you might need (here none are strictly required besides Pillow’s own deps)
-# RUN apt-get update && apt-get install -y <packages> && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements.txt into the container
+# Copy requirements and install
 COPY requirements.txt requirements.txt
-
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the source code
+# Copy your source code
 COPY . .
 
-# Set the entry point to run the Flask app
-# The PORT environment variable is provided by Cloud Run
-ENV PORT 8080
+# Let Cloud Run know which port to expose
+ENV PORT=8080
 EXPOSE 8080
 
-# Command to run our Flask app
+# Start the app
 CMD ["python", "app.py"]
