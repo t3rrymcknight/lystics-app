@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from PIL import Image
+from PIL import Image, ImageOps
 import io
 import base64
 
@@ -78,13 +78,15 @@ def upscale_image():
             target_width = int(width_in * dpi)
             target_height = int(height_in * dpi)
 
-            # Fit image to target size while preserving aspect ratio + white padding
             fitted_img = ImageOps.contain(img, (target_width, target_height), Image.Resampling.LANCZOS)
             background = Image.new("RGBA" if format == "PNG" else "RGB", (target_width, target_height), (255, 255, 255, 0 if format == "PNG" else 255))
             offset = ((target_width - fitted_img.width) // 2, (target_height - fitted_img.height) // 2)
-            background.paste(fitted_img, offset)
 
-            # Save to buffer
+            if format == "PNG":
+                background.paste(fitted_img, offset, fitted_img)
+            else:
+                background.paste(fitted_img, offset)
+
             out_buffer = io.BytesIO()
             save_kwargs = {"format": format, "dpi": (dpi, dpi)}
             if format == "JPEG":
@@ -96,6 +98,7 @@ def upscale_image():
             dimensions[label] = f"{target_width}x{target_height}"
 
         except Exception as e:
+            print(f"[{label}] Upscale error: {str(e)}")
             results[label] = None
             dimensions[label] = f"Error: {str(e)}"
 
