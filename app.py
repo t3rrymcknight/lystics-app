@@ -47,17 +47,16 @@ def resize_image_json():
     return jsonify({"image": resized_base64}), 200
 
 
-@app.route('/upscale', methods=['POST'])
-def upscale_image():
+@app.route('/upscaleOne', methods=['POST'])
+def upscale_one():
     data = request.get_json()
-
-    if not data or 'image' not in data or 'sizes' not in data:
-        return jsonify({"error": "Missing required fields: image and sizes[]"}), 400
+    if not data or 'image' not in data or 'widthInches' not in data:
+        return jsonify({"error": "Missing required fields: image and widthInches"}), 400
 
     base64_image = data['image']
     format = data.get('format', 'JPEG').upper()
     dpi = int(data.get('dpi', 300))
-    sizes = data['sizes']  # List of dicts with widthInches and heightInches
+    width_in = float(data['widthInches'])
 
     try:
         image_bytes = base64.b64decode(base64_image)
@@ -66,46 +65,26 @@ def upscale_image():
     except Exception as e:
         return jsonify({"error": f"Failed to decode or open image: {str(e)}"}), 400
 
-    results = {}
-    dimensions = {}
+    # Calculate target width, height via aspect ratio
+    target_width = int(width_in * dpi)
+    original_width, original_height = img.size
+    aspect_ratio = original_height / original_width
+    target_height = int(target_width * aspect_ratio)
 
-    for size in sizes:
-        try:
-            width_in = float(size['widthInches'])
-            height_in = float(size['heightInches'])
-            label = f"{int(width_in)}x{int(height_in)}"
+    try:
+        upscaled_img = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+        out_buffer = io.BytesIO()
+        save_kwargs = {"format": format, "dpi": (dpi, dpi)}
+        if format == "JPEG":
+            save_kwargs["quality"] = 95
+        upscaled_img.save(out_buffer, **save_kwargs)
+        out_buffer.seek(0)
+        upscaled_base64 = base64.b64encode(out_buffer.read()).decode("utf-8")
+        dimensions = f"{target_width}x{target_height}"
+        return jsonify({"image": upscaled_base64, "dimensions": dimensions}), 200
 
-            target_width = int(width_in * dpi)
-            target_height = int(height_in * dpi)
-
-            fitted_img = ImageOps.contain(img, (target_width, target_height), Image.Resampling.LANCZOS)
-            background = Image.new("RGBA" if format == "PNG" else "RGB", (target_width, target_height), (255, 255, 255, 0 if format == "PNG" else 255))
-            offset = ((target_width - fitted_img.width) // 2, (target_height - fitted_img.height) // 2)
-
-            if format == "PNG":
-                background.paste(fitted_img, offset, fitted_img)
-            else:
-                background.paste(fitted_img, offset)
-
-            out_buffer = io.BytesIO()
-            save_kwargs = {"format": format, "dpi": (dpi, dpi)}
-            if format == "JPEG":
-                save_kwargs["quality"] = 95
-            background.save(out_buffer, **save_kwargs)
-            out_buffer.seek(0)
-
-            results[label] = base64.b64encode(out_buffer.read()).decode('utf-8')
-            dimensions[label] = f"{target_width}x{target_height}"
-
-        except Exception as e:
-            print(f"[{label}] Upscale error: {str(e)}")
-            results[label] = None
-            dimensions[label] = f"Error: {str(e)}"
-
-    return jsonify({
-        "images": results,
-        "dimensions": dimensions
-    }), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to upscale image: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)
