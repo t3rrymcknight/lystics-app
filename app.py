@@ -65,10 +65,10 @@ def upscale_one():
     except Exception as e:
         return jsonify({"error": f"Failed to decode or open image: {str(e)}"}), 400
 
-    # Calculate target width, height via aspect ratio
-    target_width = int(width_in * dpi)
+    # Calculate target dimensions using original aspect ratio
     original_width, original_height = img.size
     aspect_ratio = original_height / original_width
+    target_width = int(width_in * dpi)
     target_height = int(target_width * aspect_ratio)
 
     try:
