@@ -84,71 +84,57 @@ def upscale_one():
 def generate_mockups():
     data = request.get_json()
     sku = data.get("sku")
-    image_url = data.get("imageDriveUrl")
-    mockup_names = data.get("mockups")
-    mockup_meta = data.get("mockupMeta", {})
+    image_b64 = data.get("image")  # main product image in base64
+    mockup_defs = data.get("mockups")  # dict of {mockupName: config with layers}
 
-    if not image_url or not sku or not mockup_names:
-        return jsonify({"error": "Missing imageDriveUrl, sku, or mockups[]"}), 400
+    if not sku or not image_b64 or not mockup_defs:
+        return jsonify({"error": "Missing required fields (sku, image, mockups)"}), 400
 
     try:
-        image_blob = requests.get(image_url).content
-        image = Image.open(io.BytesIO(image_blob)).convert("RGBA")
+        image_bytes = base64.b64decode(image_b64)
+        base_image = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
     except Exception as e:
-        return jsonify({"error": f"Failed to load base image: {str(e)}"}), 400
-
-    output_folder = f"output/{sku}"
-    os.makedirs(output_folder, exist_ok=True)
+        return jsonify({"error": f"Failed to decode base image: {str(e)}"}), 400
 
     results = {}
-    for mockup_name in mockup_names:
-        mockup_id = mockup_meta.get(mockup_name)
-        if not mockup_id:
-            results[mockup_name] = "No mockup ID found"
-            continue
 
-        mockup_folder = f"mockups/{mockup_id}"
-        mockup_path = os.path.join(mockup_folder, "mockup.json")
-        if not os.path.exists(mockup_path):
-            results[mockup_name] = "Missing mockup.json"
+    for mockup_name, config in mockup_defs.items():
+        layers = config.get("layers")
+        if not layers:
+            results[mockup_name] = "Invalid or missing layers"
             continue
 
         try:
-            with open(mockup_path) as f:
-                full_config = json.load(f)
-
-            if isinstance(full_config, dict) and "mockups" in full_config:
-                config = full_config["mockups"].get(mockup_name)
-            else:
-                config = full_config
-
-            if not config or "layers" not in config:
-                results[mockup_name] = "Invalid or missing layer definition"
-                continue
-
-            base = None
-            for layer in config["layers"]:
+            canvas = None
+            for layer in layers:
                 name = layer["name"]
                 x, y = layer.get("x", 0), layer.get("y", 0)
 
                 if name == "IMAGE":
                     w, h = layer["width"], layer["height"]
-                    image_resized = image.resize((w, h), Image.Resampling.LANCZOS)
-                    base.paste(image_resized, (x, y), image_resized)
+                    resized = base_image.resize((w, h), Image.Resampling.LANCZOS)
+                    if canvas is None:
+                        canvas = Image.new("RGBA", resized.size)
+                    canvas.paste(resized, (x, y), resized)
                 else:
-                    path = os.path.join(mockup_folder, f"{name}.png")
-                    overlay = Image.open(path).convert("RGBA")
-                    if base is None:
-                        base = Image.new("RGBA", overlay.size)
-                    base.paste(overlay, (x, y), overlay)
+                    overlay_b64 = layer.get("overlay")  # passed from Apps Script
+                    if not overlay_b64:
+                        continue
+                    overlay_img = Image.open(io.BytesIO(base64.b64decode(overlay_b64))).convert("RGBA")
+                    if canvas is None:
+                        canvas = Image.new("RGBA", overlay_img.size)
+                    canvas.paste(overlay_img, (x, y), overlay_img)
 
-            output_path = os.path.join(output_folder, f"{mockup_name}.jpg")
-            base.convert("RGB").save(output_path, "JPEG", quality=95)
-            results[mockup_name] = output_path
+            out_buffer = io.BytesIO()
+            canvas.convert("RGB").save(out_buffer, "JPEG", quality=95)
+            out_buffer.seek(0)
+            b64_result = base64.b64encode(out_buffer.read()).decode("utf-8")
+            results[mockup_name] = b64_result
         except Exception as e:
-            results[mockup_name] = f"Failed: {str(e)}"
+            results[mockup_name] = f"Failed to render: {str(e)}"
 
-    return jsonify({"sku": sku, "results": results})
+    return jsonify({"sku": sku, "results": results}), 200
+
 
 # ✅ Cloud Run compliant launch
 if __name__ == '__main__':
