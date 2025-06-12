@@ -82,7 +82,12 @@ def upscale_one():
 
 @app.route('/generateMockups', methods=['POST'])
 def generate_mockups():
-    data = request.get_json()
+    data = request.get_json(force=True)
+
+    # 🔍 LOG PAYLOAD for DEBUGGING
+    print("📦 Incoming Mockup Request Payload:")
+    print(json.dumps(data, indent=2))
+
     sku = data.get("sku")
     image_url = data.get("imageDriveUrl")
     mockup_names = data.get("mockups", [])
@@ -90,6 +95,13 @@ def generate_mockups():
     mockup_images = data.get("mockupImages", {})
 
     if not image_url or not sku or not mockup_names or not mockup_json_text or not mockup_images:
+        print("❌ Missing fields in request:", {
+            "sku": bool(sku),
+            "imageDriveUrl": bool(image_url),
+            "mockups": bool(mockup_names),
+            "mockupJson": bool(mockup_json_text),
+            "mockupImages": bool(mockup_images)
+        })
         return jsonify({"error": "Missing required fields"}), 400
 
     # Load and decode main product image
