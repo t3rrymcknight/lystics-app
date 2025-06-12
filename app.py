@@ -86,11 +86,6 @@ def upscale_one():
     except Exception as e:
         return jsonify({"error": f"Failed to upscale image: {str(e)}"}), 500
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=True)
-
-
-
 
 @app.route('/generateMockups', methods=['POST'])
 def generate_mockups():
@@ -161,3 +156,6 @@ def generate_mockups():
             results[mockup_name] = f"Failed: {str(e)}"
 
     return jsonify({"sku": sku, "results": results})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080, debug=True)
