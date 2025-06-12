@@ -1,10 +1,14 @@
 from flask import Flask, request, jsonify
-from PIL import Image, ImageOps
+from PIL import Image
 import io
 import base64
 import os
 import json
-import requests  # Required for downloading Drive image
+import requests
+import logging
+
+# ✅ Setup logging for Cloud Run
+logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 
@@ -82,11 +86,11 @@ def upscale_one():
 
 @app.route('/generateMockups', methods=['POST'])
 def generate_mockups():
-    data = request.get_json(force=True)
-
-    # 🔍 LOG PAYLOAD for DEBUGGING
-    print("📦 Incoming Mockup Request Payload:")
-    print(json.dumps(data, indent=2))
+    try:
+        data = request.get_json(force=True)
+        logging.info("📥 Incoming Mockup Request Payload:\n" + json.dumps(data, indent=2))
+    except Exception as e:
+        return jsonify({"error": f"Failed to parse JSON: {str(e)}"}), 400
 
     sku = data.get("sku")
     image_url = data.get("imageDriveUrl")
@@ -95,23 +99,21 @@ def generate_mockups():
     mockup_images = data.get("mockupImages", {})
 
     if not image_url or not sku or not mockup_names or not mockup_json_text or not mockup_images:
-        print("❌ Missing fields in request:", {
+        logging.warning("❌ Missing fields in request: %s", json.dumps({
             "sku": bool(sku),
             "imageDriveUrl": bool(image_url),
             "mockups": bool(mockup_names),
             "mockupJson": bool(mockup_json_text),
             "mockupImages": bool(mockup_images)
-        })
+        }, indent=2))
         return jsonify({"error": "Missing required fields"}), 400
 
-    # Load and decode main product image
     try:
         image_blob = requests.get(image_url).content
         product_image = Image.open(io.BytesIO(image_blob)).convert("RGBA")
     except Exception as e:
         return jsonify({"error": f"Failed to load base image: {str(e)}"}), 400
 
-    # Parse mockup config JSON
     try:
         full_config = json.loads(mockup_json_text)
         config_map = full_config["mockups"] if "mockups" in full_config else full_config
@@ -146,11 +148,12 @@ def generate_mockups():
                         canvas = Image.new("RGBA", resized.size)
                     canvas.paste(resized, (x, y), resized)
                 else:
-                    if name + ".png" not in mockup_assets:
-                        output[mockup_name] = f"Missing {name}.png in mockup assets"
+                    key = name + ".png"
+                    if key not in mockup_assets:
+                        output[mockup_name] = f"Missing {key} in mockup assets"
                         break
 
-                    layer_bytes = base64.b64decode(mockup_assets[name + ".png"])
+                    layer_bytes = base64.b64decode(mockup_assets[key])
                     overlay = Image.open(io.BytesIO(layer_bytes)).convert("RGBA")
                     if canvas is None:
                         canvas = Image.new("RGBA", overlay.size)
@@ -166,7 +169,6 @@ def generate_mockups():
             output[mockup_name] = f"Error generating mockup: {str(e)}"
 
     return jsonify({"sku": sku, "results": output})
-
 
 # ✅ Cloud Run compliant launch
 if __name__ == '__main__':
