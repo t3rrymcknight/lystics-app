@@ -4,7 +4,7 @@ import io
 import base64
 import os
 import json
-import requests  # ✅ ADD THIS
+import requests  # Required for downloading Drive image
 
 app = Flask(__name__)
 
@@ -20,12 +20,7 @@ def resize_image_json():
 
     base64_image = data['image']
     content_type = data.get('contentType', 'image/jpeg')
-    new_width = data.get('width', 300)
-
-    try:
-        new_width = int(new_width)
-    except ValueError:
-        return jsonify({"error": "width must be an integer"}), 400
+    new_width = int(data.get('width', 300))
 
     try:
         image_bytes = base64.b64decode(base64_image)
@@ -36,7 +31,6 @@ def resize_image_json():
     original_width, original_height = img.size
     aspect_ratio = original_width / original_height
     new_height = int(new_width / aspect_ratio)
-
     resized_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
     out_buffer = io.BytesIO()
@@ -48,7 +42,6 @@ def resize_image_json():
     out_buffer.seek(0)
     resized_base64 = base64.b64encode(out_buffer.read()).decode("utf-8")
     return jsonify({"image": resized_base64}), 200
-
 
 @app.route('/upscaleOne', methods=['POST'])
 def upscale_one():
@@ -68,7 +61,6 @@ def upscale_one():
     except Exception as e:
         return jsonify({"error": f"Failed to decode or open image: {str(e)}"}), 400
 
-    # Calculate target dimensions using original aspect ratio
     original_width, original_height = img.size
     aspect_ratio = original_height / original_width
     target_width = int(width_in * dpi)
@@ -85,18 +77,16 @@ def upscale_one():
         upscaled_base64 = base64.b64encode(out_buffer.read()).decode("utf-8")
         dimensions = f"{target_width}x{target_height}"
         return jsonify({"image": upscaled_base64, "dimensions": dimensions}), 200
-
     except Exception as e:
         return jsonify({"error": f"Failed to upscale image: {str(e)}"}), 500
-
 
 @app.route('/generateMockups', methods=['POST'])
 def generate_mockups():
     data = request.get_json()
     sku = data.get("sku")
     image_url = data.get("imageDriveUrl")
-    mockup_names = data.get("mockups")  # List of mockup names
-    mockup_meta = data.get("mockupMeta", {})  # Optional dictionary of {mockup name -> ID}
+    mockup_names = data.get("mockups")
+    mockup_meta = data.get("mockupMeta", {})
 
     if not image_url or not sku or not mockup_names:
         return jsonify({"error": "Missing imageDriveUrl, sku, or mockups[]"}), 400
@@ -160,5 +150,7 @@ def generate_mockups():
 
     return jsonify({"sku": sku, "results": results})
 
+# ✅ Cloud Run compliant launch
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
