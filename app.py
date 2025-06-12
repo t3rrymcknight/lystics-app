@@ -2,6 +2,9 @@ from flask import Flask, request, jsonify
 from PIL import Image, ImageOps
 import io
 import base64
+import os
+import json
+import requests  # ✅ ADD THIS
 
 app = Flask(__name__)
 
