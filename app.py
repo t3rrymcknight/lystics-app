@@ -84,56 +84,76 @@ def upscale_one():
 def generate_mockups():
     data = request.get_json()
     sku = data.get("sku")
-    image_b64 = data.get("image")  # main product image in base64
-    mockup_defs = data.get("mockups")  # dict of {mockupName: config with layers}
+    image_url = data.get("imageDriveUrl")
+    mockup_names = data.get("mockups", [])
+    mockup_json_text = data.get("mockupJson", "")
+    mockup_images = data.get("mockupImages", {})
 
-    if not sku or not image_b64 or not mockup_defs:
-        return jsonify({"error": "Missing required fields (sku, image, mockups)"}), 400
+    if not image_url or not sku or not mockup_names or not mockup_json_text or not mockup_images:
+        return jsonify({"error": "Missing required fields"}), 400
 
+    # Load and decode main product image
     try:
-        image_bytes = base64.b64decode(image_b64)
-        base_image = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+        image_blob = requests.get(image_url).content
+        product_image = Image.open(io.BytesIO(image_blob)).convert("RGBA")
     except Exception as e:
-        return jsonify({"error": f"Failed to decode base image: {str(e)}"}), 400
+        return jsonify({"error": f"Failed to load base image: {str(e)}"}), 400
 
-    results = {}
+    # Parse mockup config JSON
+    try:
+        full_config = json.loads(mockup_json_text)
+        config_map = full_config["mockups"] if "mockups" in full_config else full_config
+    except Exception as e:
+        return jsonify({"error": f"Invalid mockup JSON: {str(e)}"}), 400
 
-    for mockup_name, config in mockup_defs.items():
-        layers = config.get("layers")
-        if not layers:
-            results[mockup_name] = "Invalid or missing layers"
-            continue
-
+    output = {}
+    for mockup_name in mockup_names:
         try:
+            if mockup_name not in config_map:
+                output[mockup_name] = "Mockup not defined in JSON"
+                continue
+
+            config = config_map[mockup_name]
+            layers = config.get("layers", [])
+            if not layers:
+                output[mockup_name] = "No layers defined"
+                continue
+
             canvas = None
+            mockup_assets = mockup_images.get(mockup_name, {})
+
             for layer in layers:
                 name = layer["name"]
-                x, y = layer.get("x", 0), layer.get("y", 0)
+                x = layer.get("x", 0)
+                y = layer.get("y", 0)
 
                 if name == "IMAGE":
                     w, h = layer["width"], layer["height"]
-                    resized = base_image.resize((w, h), Image.Resampling.LANCZOS)
+                    resized = product_image.resize((w, h), Image.Resampling.LANCZOS)
                     if canvas is None:
                         canvas = Image.new("RGBA", resized.size)
                     canvas.paste(resized, (x, y), resized)
                 else:
-                    overlay_b64 = layer.get("overlay")  # passed from Apps Script
-                    if not overlay_b64:
-                        continue
-                    overlay_img = Image.open(io.BytesIO(base64.b64decode(overlay_b64))).convert("RGBA")
+                    if name + ".png" not in mockup_assets:
+                        output[mockup_name] = f"Missing {name}.png in mockup assets"
+                        break
+
+                    layer_bytes = base64.b64decode(mockup_assets[name + ".png"])
+                    overlay = Image.open(io.BytesIO(layer_bytes)).convert("RGBA")
                     if canvas is None:
-                        canvas = Image.new("RGBA", overlay_img.size)
-                    canvas.paste(overlay_img, (x, y), overlay_img)
+                        canvas = Image.new("RGBA", overlay.size)
+                    canvas.paste(overlay, (x, y), overlay)
 
-            out_buffer = io.BytesIO()
-            canvas.convert("RGB").save(out_buffer, "JPEG", quality=95)
-            out_buffer.seek(0)
-            b64_result = base64.b64encode(out_buffer.read()).decode("utf-8")
-            results[mockup_name] = b64_result
+            if canvas:
+                out_buffer = io.BytesIO()
+                canvas.convert("RGB").save(out_buffer, format="JPEG", quality=95)
+                out_buffer.seek(0)
+                encoded = base64.b64encode(out_buffer.read()).decode("utf-8")
+                output[mockup_name] = encoded
         except Exception as e:
-            results[mockup_name] = f"Failed to render: {str(e)}"
+            output[mockup_name] = f"Error generating mockup: {str(e)}"
 
-    return jsonify({"sku": sku, "results": results}), 200
+    return jsonify({"sku": sku, "results": output})
 
 
 # ✅ Cloud Run compliant launch
