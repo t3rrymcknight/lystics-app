@@ -6,11 +6,9 @@ import os
 import json
 import requests
 import logging
-from bs4 import BeautifulSoup
-import time
-import re
+from playwright.sync_api import sync_playwright
 
-# ✅ Setup logging for Cloud Run
+# ✅ Setup logging
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
@@ -18,7 +16,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Welcome to TMK Image Resizer!"
+    return "Welcome to TMK Image Resizer & Price Checker!"
 
 
 # === IMAGE RESIZER JSON ===
@@ -29,7 +27,6 @@ def resize_image_json():
         return jsonify({"error": "No image data found"}), 400
 
     base64_image = data['image']
-    content_type = data.get('contentType', 'image/jpeg')
     new_width = int(data.get('width', 300))
 
     try:
@@ -109,13 +106,6 @@ def generate_mockups():
     mockup_images = data.get("mockupImages", {})
 
     if not image_url or not sku or not mockup_names or not mockup_json_text or not mockup_images:
-        logging.warning("❌ Missing fields in request: %s", json.dumps({
-            "sku": bool(sku),
-            "imageDriveUrl": bool(image_url),
-            "mockups": bool(mockup_names),
-            "mockupJson": bool(mockup_json_text),
-            "mockupImages": bool(mockup_images)
-        }, indent=2))
         return jsonify({"error": "Missing required fields"}), 400
 
     try:
@@ -181,7 +171,7 @@ def generate_mockups():
     return jsonify({"sku": sku, "results": output})
 
 
-# === GOOGLE SHOPPING PRICE SCRAPER ===
+# === PLAYWRIGHT PRICE CHECK ===
 @app.route("/api/price-check", methods=["POST"])
 def price_check():
     data = request.json
@@ -190,46 +180,46 @@ def price_check():
         return jsonify({"error": "No keyword provided"}), 400
 
     logging.info(f"🔍 Price check for: {keyword}")
-    prices = scrape_google_shopping(keyword)
-
-    if not prices:
-        logging.warning("⚠️ No prices found or failed to scrape")
-        return jsonify({
-            "keyword": keyword,
-            "min_price": None,
-            "max_price": None,
-            "avg_price": None,
-            "found_prices": []
-        }), 200
-
-    return jsonify({
-        "keyword": keyword,
-        "min_price": min(prices),
-        "max_price": max(prices),
-        "avg_price": round(sum(prices) / len(prices), 2),
-        "found_prices": prices
-    }), 200
-
-
-def scrape_google_shopping(keyword):
-    url = f"https://www.google.com/search?tbm=shop&q={keyword}"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-    }
 
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        price_matches = re.findall(r'[£€]\s?[\d,]+(?:\.\d{2})?', soup.text)
-        prices = [
-            float(p.replace("£", "").replace("€", "").replace(",", "").strip())
-            for p in price_matches
-        ]
-        logging.info(f"💰 Extracted {len(prices)} prices.")
-        return prices
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            url = f"https://www.google.com/search?tbm=shop&q={keyword}"
+            page.goto(url, timeout=15000)
+
+            # Accept cookies if visible
+            try:
+                if page.locator('button:has-text("Accept all")').is_visible():
+                    page.locator('button:has-text("Accept all")').click()
+                    logging.info("🍪 Accepted cookies.")
+            except:
+                pass
+
+            page.wait_for_selector('div.sh-dgr__grid-result', timeout=10000)
+
+            price_texts = page.locator('span.a8Pemb')
+            prices = []
+            count = price_texts.count()
+            for i in range(count):
+                raw = price_texts.nth(i).inner_text().replace('£', '').replace(',', '').strip()
+                try:
+                    prices.append(float(raw))
+                except:
+                    continue
+
+            browser.close()
+
+            return jsonify({
+                "keyword": keyword,
+                "min_price": min(prices) if prices else None,
+                "max_price": max(prices) if prices else None,
+                "avg_price": round(sum(prices) / len(prices), 2) if prices else None,
+                "found_prices": prices
+            })
     except Exception as e:
-        logging.error(f"❌ Scrape failed: {str(e)}")
-        return []
+        logging.error(f"❌ Scraping failed: {str(e)}")
+        return jsonify({"error": f"Scraping failed: {str(e)}"}), 500
 
 
 # === Cloud Run launch ===
