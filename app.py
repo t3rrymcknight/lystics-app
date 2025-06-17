@@ -6,6 +6,7 @@ import os
 import json
 import requests
 import logging
+from bs4 import BeautifulSoup
 import re
 
 # ✅ Setup logging
@@ -90,7 +91,7 @@ def upscale_one():
         return jsonify({"error": f"Failed to upscale image: {str(e)}"}), 500
 
 
-# === GOOGLE SHOPPING PRICE CHECK (via Crawlbase Product Offers) ===
+# === GOOGLE SHOPPING SCRAPER VIA CRAWLBASE ===
 @app.route("/api/price-check", methods=["POST"])
 def price_check():
     data = request.json
@@ -99,19 +100,7 @@ def price_check():
         return jsonify({"error": "No keyword provided"}), 400
 
     logging.info(f"🔍 Price check for: {keyword}")
-
-    product_url = get_google_shopping_product_url(keyword)
-    if not product_url:
-        logging.warning("⚠️ No Google Shopping product URL found for keyword")
-        return jsonify({
-            "keyword": keyword,
-            "min_price": None,
-            "max_price": None,
-            "avg_price": None,
-            "found_prices": []
-        }), 200
-
-    prices = scrape_google_product_offers(product_url)
+    prices = scrape_google_shopping(keyword)
 
     if not prices:
         logging.warning("⚠️ No prices found or failed to scrape")
@@ -129,61 +118,43 @@ def price_check():
         "max_price": max(prices),
         "avg_price": round(sum(prices) / len(prices), 2),
         "found_prices": prices
-    })
+    }), 200
 
 
-def get_google_shopping_product_url(keyword):
+def scrape_google_shopping(keyword):
     API_TOKEN = os.getenv("CRAWLBASE_TOKEN")
-    search_url = f"https://www.google.com/search?tbm=shop&q={keyword}"
-    api_url = "https://api.crawlbase.com/scraper"
+    base_url = "https://api.crawlbase.com/"
+    query_url = f"https://www.google.com/search?q={keyword}&tbm=shop"
 
     params = {
         "token": API_TOKEN,
-        "url": search_url,
-        "device": "desktop",
+        "url": query_url,
         "country": "gb",
-        "autoparse": "true"
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        "page_wait": 5000
     }
 
     try:
-        response = requests.get(api_url, params=params, timeout=20)
+        response = requests.get(base_url, params=params, timeout=20)
         response.raise_for_status()
+
         html = response.text
+        soup = BeautifulSoup(html, "lxml")
 
-        match = re.search(r"/shopping/product/\d+/offers", html)
-        if match:
-            return "https://www.google.com" + match.group(0)
-    except Exception as e:
-        logging.error(f"❌ Failed to fetch product URL: {str(e)}")
+        price_elements = soup.find_all("span", string=re.compile(r"£\\s?[\\d,.]+"))
+        prices = []
+        for elem in price_elements:
+            try:
+                price = float(re.sub(r"[£,]", "", elem.text.strip()))
+                prices.append(price)
+            except:
+                continue
 
-    return None
-
-
-def scrape_google_product_offers(product_url):
-    API_TOKEN = os.getenv("CRAWLBASE_TOKEN")
-    api_url = "https://api.crawlbase.com/scraper"
-
-    params = {
-        "token": API_TOKEN,
-        "url": product_url,
-        "scraper": "google_product_offers"
-    }
-
-    try:
-        response = requests.get(api_url, params=params, timeout=20)
-        response.raise_for_status()
-        json_data = response.json()
-
-        offers = json_data.get("offers", [])
-        prices = [
-            float(re.sub(r"[^\d.]", "", offer.get("price", "")))
-            for offer in offers if offer.get("price")
-        ]
-
-        logging.info(f"💰 Extracted {len(prices)} prices via Crawlbase product offers")
+        logging.info(f"💰 Extracted {len(prices)} prices from Google Shopping HTML.")
         return prices
+
     except Exception as e:
-        logging.error(f"❌ Crawlbase product offer scrape failed: {str(e)}")
+        logging.error(f"❌ HTML scrape via Crawlbase failed: {str(e)}")
         return []
 
 
