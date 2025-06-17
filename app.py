@@ -15,10 +15,13 @@ logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 
+
 @app.route('/')
 def home():
     return "Welcome to TMK Image Resizer!"
 
+
+# === IMAGE RESIZER JSON ===
 @app.route('/resizeJson', methods=['POST'])
 def resize_image_json():
     data = request.get_json()
@@ -50,6 +53,8 @@ def resize_image_json():
     resized_base64 = base64.b64encode(out_buffer.read()).decode("utf-8")
     return jsonify({"image": resized_base64}), 200
 
+
+# === UPSCALER ===
 @app.route('/upscaleOne', methods=['POST'])
 def upscale_one():
     data = request.get_json()
@@ -87,6 +92,8 @@ def upscale_one():
     except Exception as e:
         return jsonify({"error": f"Failed to upscale image: {str(e)}"}), 500
 
+
+# === MOCKUP GENERATOR ===
 @app.route('/generateMockups', methods=['POST'])
 def generate_mockups():
     try:
@@ -172,6 +179,9 @@ def generate_mockups():
             output[mockup_name] = f"Error generating mockup: {str(e)}"
 
     return jsonify({"sku": sku, "results": output})
+
+
+# === GOOGLE SHOPPING PRICE SCRAPER ===
 @app.route("/api/price-check", methods=["POST"])
 def price_check():
     data = request.json
@@ -179,12 +189,24 @@ def price_check():
     if not keyword:
         return jsonify({"error": "No keyword provided"}), 400
 
+    logging.info(f"🔍 Price check for: {keyword}")
     prices = scrape_google_shopping(keyword)
+
+    if not prices:
+        logging.warning("⚠️ No prices found or failed to scrape")
+        return jsonify({
+            "keyword": keyword,
+            "min_price": None,
+            "max_price": None,
+            "avg_price": None,
+            "found_prices": []
+        }), 200
+
     return jsonify({
         "keyword": keyword,
-        "min_price": min(prices) if prices else None,
-        "max_price": max(prices) if prices else None,
-        "avg_price": round(sum(prices) / len(prices), 2) if prices else None,
+        "min_price": min(prices),
+        "max_price": max(prices),
+        "avg_price": round(sum(prices) / len(prices), 2),
         "found_prices": prices
     }), 200
 
@@ -198,18 +220,19 @@ def scrape_google_shopping(keyword):
     try:
         response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
-
-        # Regex to match prices like £89.99 or €42.00
         price_matches = re.findall(r'[£€]\s?[\d,]+(?:\.\d{2})?', soup.text)
         prices = [
             float(p.replace("£", "").replace("€", "").replace(",", "").strip())
             for p in price_matches
         ]
-
+        logging.info(f"💰 Extracted {len(prices)} prices.")
         return prices
     except Exception as e:
+        logging.error(f"❌ Scrape failed: {str(e)}")
         return []
-# ✅ Cloud Run compliant launch
+
+
+# === Cloud Run launch ===
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
