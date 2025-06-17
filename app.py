@@ -7,6 +7,7 @@ import json
 import requests
 import logging
 from playwright.sync_api import sync_playwright
+import re
 
 # ✅ Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -90,7 +91,7 @@ def upscale_one():
         return jsonify({"error": f"Failed to upscale image: {str(e)}"}), 500
 
 
-# === GOOGLE SHOPPING PRICE SCRAPER USING PLAYWRIGHT ===
+# === GOOGLE SHOPPING PRICE SCRAPER USING PLAYWRIGHT + REGEX ===
 @app.route("/api/price-check", methods=["POST"])
 def price_check():
     data = request.json
@@ -107,7 +108,7 @@ def price_check():
             try:
                 page = browser.new_page()
                 url = f"https://www.google.com/search?tbm=shop&q={keyword}"
-                page.goto(url, timeout=15000)
+                page.goto(url, timeout=20000)
 
                 try:
                     if page.locator('button:has-text("Accept all")').is_visible():
@@ -117,24 +118,22 @@ def price_check():
                     pass
 
                 try:
-                    page.wait_for_selector('div.sh-dgr__grid-result, span.a8Pemb', timeout=10000)
+                    page.wait_for_selector('div.eqAnXb.FcOujd', timeout=10000)
                 except Exception as e:
-                    logging.warning(f"⚠️ Selector not found in time: {str(e)}")
+                    logging.warning(f"⚠️ Main results container not found in time: {str(e)}")
 
+                # Optional JS delay for rendering
+                page.wait_for_timeout(3000)
+                html = page.content()
                 if debug:
-                    logging.debug("📄 HTML Preview:\n" + page.content()[:2000])
+                    logging.debug("📄 HTML Preview:\n" + html[:2000])
 
-                price_texts = page.locator('span.a8Pemb')
-                if price_texts.count() == 0:
-                    price_texts = page.locator('div.sh-osd__price')
-
-                prices = []
-                for i in range(price_texts.count()):
-                    raw = price_texts.nth(i).inner_text().replace('£', '').replace('€', '').replace(',', '').strip()
-                    try:
-                        prices.append(float(raw))
-                    except:
-                        continue
+                # Use regex to extract all visible price values
+                price_matches = re.findall(r'£\s?[\d,]+(?:\.\d{2})?', html)
+                prices = [
+                    float(p.replace("£", "").replace(",", "").strip())
+                    for p in price_matches
+                ]
             finally:
                 browser.close()
 
