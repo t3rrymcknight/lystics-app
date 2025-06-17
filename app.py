@@ -6,7 +6,6 @@ import os
 import json
 import requests
 import logging
-from playwright.sync_api import sync_playwright
 import re
 
 # ✅ Setup logging
@@ -17,7 +16,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Welcome to Agent One!"
+    return "Welcome to TMK Image Resizer & Price Checker!"
 
 
 # === IMAGE RESIZER JSON ===
@@ -91,72 +90,62 @@ def upscale_one():
         return jsonify({"error": f"Failed to upscale image: {str(e)}"}), 500
 
 
-# === GOOGLE SHOPPING PRICE SCRAPER USING PLAYWRIGHT + REGEX ===
+# === GOOGLE SHOPPING PRICE CHECK (via Crawlbase) ===
 @app.route("/api/price-check", methods=["POST"])
 def price_check():
     data = request.json
     keyword = data.get("keyword")
-    debug = data.get("debug", False)
     if not keyword:
         return jsonify({"error": "No keyword provided"}), 400
 
     logging.info(f"🔍 Price check for: {keyword}")
+    prices = scrape_google_shopping(keyword)
 
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            try:
-                page = browser.new_page()
-                url = f"https://www.google.com/search?tbm=shop&q={keyword}"
-                page.goto(url, timeout=20000)
-
-                # ✅ Accept cookies if shown
-                try:
-                    if page.locator('button:has-text("Accept all")').is_visible():
-                        page.locator('button:has-text("Accept all")').click()
-                        logging.info("🍪 Accepted cookies.")
-                except:
-                    pass
-
-                # ✅ Let JS content finish loading
-                page.wait_for_load_state("networkidle")
-                page.wait_for_timeout(3000)
-
-                html = page.content()
-                if debug:
-                    logging.debug("📄 HTML Preview:\n" + html[:2000])
-
-                # ✅ Extract £-formatted prices with regex
-                price_matches = re.findall(r'£\s?[\d,]+(?:\.\d{2})?', html)
-                prices = [
-                    float(p.replace("£", "").replace(",", "").strip())
-                    for p in price_matches
-                ]
-            finally:
-                browser.close()
-
-        logging.info(f"💰 Extracted {len(prices)} prices.")
-        if not prices:
-            logging.warning("⚠️ No prices found or failed to scrape")
-            return jsonify({
-                "keyword": keyword,
-                "min_price": None,
-                "max_price": None,
-                "avg_price": None,
-                "found_prices": []
-            }), 200
-
+    if not prices:
+        logging.warning("⚠️ No prices found or failed to scrape")
         return jsonify({
             "keyword": keyword,
-            "min_price": min(prices),
-            "max_price": max(prices),
-            "avg_price": round(sum(prices) / len(prices), 2),
-            "found_prices": prices
-        })
+            "min_price": None,
+            "max_price": None,
+            "avg_price": None,
+            "found_prices": []
+        }), 200
 
+    return jsonify({
+        "keyword": keyword,
+        "min_price": min(prices),
+        "max_price": max(prices),
+        "avg_price": round(sum(prices) / len(prices), 2),
+        "found_prices": prices
+    })
+
+
+def scrape_google_shopping(keyword):
+    API_TOKEN = os.getenv("CYlpaaQZbbH1k-5wzEAq5Q")
+    api_url = "https://api.crawlbase.com/scraper"
+
+    params = {
+        "token": API_TOKEN,
+        "url": f"https://www.google.com/search?tbm=shop&q={keyword}",
+        "scraper": "google_product_offers"
+    }
+
+    try:
+        response = requests.get(api_url, params=params, timeout=20)
+        response.raise_for_status()
+        json_data = response.json()
+
+        offers = json_data.get("offers", [])
+        prices = [
+            float(re.sub(r"[^\d.]", "", offer.get("price", "")))
+            for offer in offers if offer.get("price")
+        ]
+
+        logging.info(f"💰 Extracted {len(prices)} prices via Crawlbase")
+        return prices
     except Exception as e:
-        logging.error(f"❌ Scraping failed: {str(e)}")
-        return jsonify({"error": f"Scraping failed: {str(e)}"}), 500
+        logging.error(f"❌ Crawlbase scraping failed: {str(e)}")
+        return []
 
 
 # === Cloud Run launch ===
