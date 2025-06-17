@@ -6,6 +6,9 @@ import os
 import json
 import requests
 import logging
+from bs4 import BeautifulSoup
+import time
+import re
 
 # ✅ Setup logging for Cloud Run
 logging.basicConfig(level=logging.INFO)
@@ -169,7 +172,43 @@ def generate_mockups():
             output[mockup_name] = f"Error generating mockup: {str(e)}"
 
     return jsonify({"sku": sku, "results": output})
+@app.route("/api/price-check", methods=["POST"])
+def price_check():
+    data = request.json
+    keyword = data.get("keyword")
+    if not keyword:
+        return jsonify({"error": "No keyword provided"}), 400
 
+    prices = scrape_google_shopping(keyword)
+    return jsonify({
+        "keyword": keyword,
+        "min_price": min(prices) if prices else None,
+        "max_price": max(prices) if prices else None,
+        "avg_price": round(sum(prices) / len(prices), 2) if prices else None,
+        "found_prices": prices
+    }), 200
+
+
+def scrape_google_shopping(keyword):
+    url = f"https://www.google.com/search?tbm=shop&q={keyword}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    }
+
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        # Regex to match prices like £89.99 or €42.00
+        price_matches = re.findall(r'[£€]\s?[\d,]+(?:\.\d{2})?', soup.text)
+        prices = [
+            float(p.replace("£", "").replace("€", "").replace(",", "").strip())
+            for p in price_matches
+        ]
+
+        return prices
+    except Exception as e:
+        return []
 # ✅ Cloud Run compliant launch
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
