@@ -95,6 +95,7 @@ def upscale_one():
 def price_check():
     data = request.json
     keyword = data.get("keyword")
+    debug = data.get("debug", False)
     if not keyword:
         return jsonify({"error": "No keyword provided"}), 400
 
@@ -108,7 +109,6 @@ def price_check():
                 url = f"https://www.google.com/search?tbm=shop&q={keyword}"
                 page.goto(url, timeout=15000)
 
-                # Try accept cookies
                 try:
                     if page.locator('button:has-text("Accept all")').is_visible():
                         page.locator('button:has-text("Accept all")').click()
@@ -116,10 +116,17 @@ def price_check():
                 except:
                     pass
 
-                page.wait_for_selector('div.sh-dgr__grid-result, span.a8Pemb', timeout=10000)
+                try:
+                    page.wait_for_selector('div.sh-dgr__grid-result, span.a8Pemb', timeout=10000)
+                except Exception as e:
+                    logging.warning(f"⚠️ Selector not found in time: {str(e)}")
+
+                if debug:
+                    logging.debug("📄 HTML Preview:\n" + page.content()[:2000])
+
                 price_texts = page.locator('span.a8Pemb')
                 if price_texts.count() == 0:
-                    price_texts = page.locator('div.sh-osd__price')  # fallback
+                    price_texts = page.locator('div.sh-osd__price')
 
                 prices = []
                 for i in range(price_texts.count()):
