@@ -17,7 +17,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Welcome to TMK Image Resizer & Price Checker!"
+    return "Welcome to Agent One!"
 
 
 # === IMAGE RESIZER JSON ===
