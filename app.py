@@ -122,7 +122,7 @@ def price_check():
 
 
 def scrape_google_shopping(keyword):
-    API_TOKEN = os.getenv("CRAWLBASE_TOKEN")
+    API_TOKEN = os.getenv("CYlpaaQZbbH1k-5wzEAq5Q")
     base_url = "https://api.crawlbase.com/"
     query_url = f"https://www.google.com/search?q={keyword}&tbm=shop"
 
