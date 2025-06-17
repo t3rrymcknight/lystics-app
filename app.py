@@ -110,6 +110,7 @@ def price_check():
                 url = f"https://www.google.com/search?tbm=shop&q={keyword}"
                 page.goto(url, timeout=20000)
 
+                # ✅ Accept cookies if shown
                 try:
                     if page.locator('button:has-text("Accept all")').is_visible():
                         page.locator('button:has-text("Accept all")').click()
@@ -117,18 +118,15 @@ def price_check():
                 except:
                     pass
 
-                try:
-                    page.wait_for_selector('div.eqAnXb.FcOujd', timeout=10000)
-                except Exception as e:
-                    logging.warning(f"⚠️ Main results container not found in time: {str(e)}")
-
-                # Optional JS delay for rendering
+                # ✅ Let JS content finish loading
+                page.wait_for_load_state("networkidle")
                 page.wait_for_timeout(3000)
+
                 html = page.content()
                 if debug:
                     logging.debug("📄 HTML Preview:\n" + html[:2000])
 
-                # Use regex to extract all visible price values
+                # ✅ Extract £-formatted prices with regex
                 price_matches = re.findall(r'£\s?[\d,]+(?:\.\d{2})?', html)
                 prices = [
                     float(p.replace("£", "").replace(",", "").strip())
