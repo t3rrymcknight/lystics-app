@@ -16,7 +16,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Welcome to the Agent"
+    return "Welcome to TMK Image Resizer & Price Checker!"
 
 
 # === IMAGE RESIZER JSON ===
@@ -90,7 +90,7 @@ def upscale_one():
         return jsonify({"error": f"Failed to upscale image: {str(e)}"}), 500
 
 
-# === GOOGLE SHOPPING PRICE CHECK (via Crawlbase) ===
+# === GOOGLE SHOPPING PRICE CHECK (via Crawlbase Product Offers) ===
 @app.route("/api/price-check", methods=["POST"])
 def price_check():
     data = request.json
@@ -99,7 +99,19 @@ def price_check():
         return jsonify({"error": "No keyword provided"}), 400
 
     logging.info(f"🔍 Price check for: {keyword}")
-    prices = scrape_google_shopping(keyword)
+
+    product_url = get_google_shopping_product_url(keyword)
+    if not product_url:
+        logging.warning("⚠️ No Google Shopping product URL found for keyword")
+        return jsonify({
+            "keyword": keyword,
+            "min_price": None,
+            "max_price": None,
+            "avg_price": None,
+            "found_prices": []
+        }), 200
+
+    prices = scrape_google_product_offers(product_url)
 
     if not prices:
         logging.warning("⚠️ No prices found or failed to scrape")
@@ -120,13 +132,40 @@ def price_check():
     })
 
 
-def scrape_google_shopping(keyword):
-    API_TOKEN = os.getenv("CYlpaaQZbbH1k-5wzEAq5Q")
+def get_google_shopping_product_url(keyword):
+    API_TOKEN = os.getenv("CRAWLBASE_TOKEN")
+    search_url = f"https://www.google.com/search?tbm=shop&q={keyword}"
     api_url = "https://api.crawlbase.com/scraper"
 
     params = {
         "token": API_TOKEN,
-        "url": f"https://www.google.com/search?tbm=shop&q={keyword}",
+        "url": search_url,
+        "device": "desktop",
+        "country": "gb",
+        "autoparse": "true"
+    }
+
+    try:
+        response = requests.get(api_url, params=params, timeout=20)
+        response.raise_for_status()
+        html = response.text
+
+        match = re.search(r"/shopping/product/\d+/offers", html)
+        if match:
+            return "https://www.google.com" + match.group(0)
+    except Exception as e:
+        logging.error(f"❌ Failed to fetch product URL: {str(e)}")
+
+    return None
+
+
+def scrape_google_product_offers(product_url):
+    API_TOKEN = os.getenv("CRAWLBASE_TOKEN")
+    api_url = "https://api.crawlbase.com/scraper"
+
+    params = {
+        "token": API_TOKEN,
+        "url": product_url,
         "scraper": "google_product_offers"
     }
 
@@ -141,10 +180,10 @@ def scrape_google_shopping(keyword):
             for offer in offers if offer.get("price")
         ]
 
-        logging.info(f"💰 Extracted {len(prices)} prices via Crawlbase")
+        logging.info(f"💰 Extracted {len(prices)} prices via Crawlbase product offers")
         return prices
     except Exception as e:
-        logging.error(f"❌ Crawlbase scraping failed: {str(e)}")
+        logging.error(f"❌ Crawlbase product offer scrape failed: {str(e)}")
         return []
 
 
