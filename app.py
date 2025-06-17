@@ -90,88 +90,7 @@ def upscale_one():
         return jsonify({"error": f"Failed to upscale image: {str(e)}"}), 500
 
 
-# === MOCKUP GENERATOR ===
-@app.route('/generateMockups', methods=['POST'])
-def generate_mockups():
-    try:
-        data = request.get_json(force=True)
-        logging.info("📥 Incoming Mockup Request Payload:\n" + json.dumps(data, indent=2))
-    except Exception as e:
-        return jsonify({"error": f"Failed to parse JSON: {str(e)}"}), 400
-
-    sku = data.get("sku")
-    image_url = data.get("imageDriveUrl")
-    mockup_names = data.get("mockups", [])
-    mockup_json_text = data.get("mockupJson", "")
-    mockup_images = data.get("mockupImages", {})
-
-    if not image_url or not sku or not mockup_names or not mockup_json_text or not mockup_images:
-        return jsonify({"error": "Missing required fields"}), 400
-
-    try:
-        image_blob = requests.get(image_url).content
-        product_image = Image.open(io.BytesIO(image_blob)).convert("RGBA")
-    except Exception as e:
-        return jsonify({"error": f"Failed to load base image: {str(e)}"}), 400
-
-    try:
-        full_config = json.loads(mockup_json_text)
-        config_map = full_config["mockups"] if "mockups" in full_config else full_config
-    except Exception as e:
-        return jsonify({"error": f"Invalid mockup JSON: {str(e)}"}), 400
-
-    output = {}
-    for mockup_name in mockup_names:
-        try:
-            if mockup_name not in config_map:
-                output[mockup_name] = "Mockup not defined in JSON"
-                continue
-
-            config = config_map[mockup_name]
-            layers = config.get("layers", [])
-            if not layers:
-                output[mockup_name] = "No layers defined"
-                continue
-
-            canvas = None
-            mockup_assets = mockup_images.get(mockup_name, {})
-
-            for layer in layers:
-                name = layer["name"]
-                x = layer.get("x", 0)
-                y = layer.get("y", 0)
-
-                if name == "IMAGE":
-                    w, h = layer["width"], layer["height"]
-                    resized = product_image.resize((w, h), Image.Resampling.LANCZOS)
-                    if canvas is None:
-                        canvas = Image.new("RGBA", resized.size)
-                    canvas.paste(resized, (x, y), resized)
-                else:
-                    key = name + ".png"
-                    if key not in mockup_assets:
-                        output[mockup_name] = f"Missing {key} in mockup assets"
-                        break
-
-                    layer_bytes = base64.b64decode(mockup_assets[key])
-                    overlay = Image.open(io.BytesIO(layer_bytes)).convert("RGBA")
-                    if canvas is None:
-                        canvas = Image.new("RGBA", overlay.size)
-                    canvas.paste(overlay, (x, y), overlay)
-
-            if canvas:
-                out_buffer = io.BytesIO()
-                canvas.convert("RGB").save(out_buffer, format="JPEG", quality=95)
-                out_buffer.seek(0)
-                encoded = base64.b64encode(out_buffer.read()).decode("utf-8")
-                output[mockup_name] = encoded
-        except Exception as e:
-            output[mockup_name] = f"Error generating mockup: {str(e)}"
-
-    return jsonify({"sku": sku, "results": output})
-
-
-# === PLAYWRIGHT PRICE CHECK ===
+# === GOOGLE SHOPPING PRICE SCRAPER USING PLAYWRIGHT ===
 @app.route("/api/price-check", methods=["POST"])
 def price_check():
     data = request.json
@@ -184,39 +103,53 @@ def price_check():
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            url = f"https://www.google.com/search?tbm=shop&q={keyword}"
-            page.goto(url, timeout=15000)
-
-            # Accept cookies if visible
             try:
-                if page.locator('button:has-text("Accept all")').is_visible():
-                    page.locator('button:has-text("Accept all")').click()
-                    logging.info("🍪 Accepted cookies.")
-            except:
-                pass
+                page = browser.new_page()
+                url = f"https://www.google.com/search?tbm=shop&q={keyword}"
+                page.goto(url, timeout=15000)
 
-            page.wait_for_selector('div.sh-dgr__grid-result', timeout=10000)
-
-            price_texts = page.locator('span.a8Pemb')
-            prices = []
-            count = price_texts.count()
-            for i in range(count):
-                raw = price_texts.nth(i).inner_text().replace('£', '').replace(',', '').strip()
+                # Try accept cookies
                 try:
-                    prices.append(float(raw))
+                    if page.locator('button:has-text("Accept all")').is_visible():
+                        page.locator('button:has-text("Accept all")').click()
+                        logging.info("🍪 Accepted cookies.")
                 except:
-                    continue
+                    pass
 
-            browser.close()
+                page.wait_for_selector('div.sh-dgr__grid-result, span.a8Pemb', timeout=10000)
+                price_texts = page.locator('span.a8Pemb')
+                if price_texts.count() == 0:
+                    price_texts = page.locator('div.sh-osd__price')  # fallback
 
+                prices = []
+                for i in range(price_texts.count()):
+                    raw = price_texts.nth(i).inner_text().replace('£', '').replace('€', '').replace(',', '').strip()
+                    try:
+                        prices.append(float(raw))
+                    except:
+                        continue
+            finally:
+                browser.close()
+
+        logging.info(f"💰 Extracted {len(prices)} prices.")
+        if not prices:
+            logging.warning("⚠️ No prices found or failed to scrape")
             return jsonify({
                 "keyword": keyword,
-                "min_price": min(prices) if prices else None,
-                "max_price": max(prices) if prices else None,
-                "avg_price": round(sum(prices) / len(prices), 2) if prices else None,
-                "found_prices": prices
-            })
+                "min_price": None,
+                "max_price": None,
+                "avg_price": None,
+                "found_prices": []
+            }), 200
+
+        return jsonify({
+            "keyword": keyword,
+            "min_price": min(prices),
+            "max_price": max(prices),
+            "avg_price": round(sum(prices) / len(prices), 2),
+            "found_prices": prices
+        })
+
     except Exception as e:
         logging.error(f"❌ Scraping failed: {str(e)}")
         return jsonify({"error": f"Scraping failed: {str(e)}"}), 500
