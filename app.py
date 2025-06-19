@@ -14,13 +14,12 @@ logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 
-
+# === Home Route ===
 @app.route('/')
 def home():
     return "Welcome to TMK Image Resizer & Price Checker!"
 
-
-# === IMAGE RESIZER JSON ===
+# === IMAGE RESIZER ===
 @app.route('/resizeJson', methods=['POST'])
 def resize_image_json():
     data = request.get_json()
@@ -33,7 +32,7 @@ def resize_image_json():
     try:
         image_bytes = base64.b64decode(base64_image)
         img = Image.open(io.BytesIO(image_bytes))
-        input_format = img.format or "JPEG"  # fallback if unknown
+        input_format = img.format or "JPEG"
     except Exception as e:
         return jsonify({"error": f"Image decoding error: {str(e)}"}), 400
 
@@ -42,7 +41,6 @@ def resize_image_json():
     new_height = int(new_width / aspect_ratio)
     resized_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
-    # === Mode conversion based on format ===
     if input_format.upper() == "PNG":
         resized_img = resized_img.convert("RGBA")
     else:
@@ -57,7 +55,6 @@ def resize_image_json():
     out_buffer.seek(0)
     resized_base64 = base64.b64encode(out_buffer.read()).decode("utf-8")
     return jsonify({"image": resized_base64, "format": input_format}), 200
-
 
 # === UPSCALER ===
 @app.route('/upscaleOne', methods=['POST'])
@@ -97,8 +94,7 @@ def upscale_one():
     except Exception as e:
         return jsonify({"error": f"Failed to upscale image: {str(e)}"}), 500
 
-
-# === GOOGLE SHOPPING SCRAPER VIA CRAWLBASE ===
+# === PRICE CHECK ===
 @app.route("/api/price-check", methods=["POST"])
 def price_check():
     data = request.json
@@ -127,9 +123,8 @@ def price_check():
         "found_prices": prices
     }), 200
 
-
 def scrape_google_shopping(keyword):
-    API_TOKEN = os.getenv("CYlpaaQZbbH1k-5wzEAq5Q")
+    API_TOKEN = os.getenv("CYlpaaQZbbH1k-5wzEAq5Q")  # Replace with correct ENV var
     base_url = "https://api.crawlbase.com/"
     query_url = f"https://www.google.com/search?q={keyword}&tbm=shop"
 
@@ -137,18 +132,16 @@ def scrape_google_shopping(keyword):
         "token": API_TOKEN,
         "url": query_url,
         "country": "gb",
-        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        "user_agent": "Mozilla/5.0",
         "page_wait": 5000
     }
 
     try:
         response = requests.get(base_url, params=params, timeout=20)
         response.raise_for_status()
+        soup = BeautifulSoup(response.text, "lxml")
 
-        html = response.text
-        soup = BeautifulSoup(html, "lxml")
-
-        price_elements = soup.find_all("span", string=re.compile(r"£\\s?[\\d,.]+"))
+        price_elements = soup.find_all("span", string=re.compile(r"£\s?[\d,.]+"))
         prices = []
         for elem in price_elements:
             try:
@@ -157,15 +150,17 @@ def scrape_google_shopping(keyword):
             except:
                 continue
 
-        logging.info(f"💰 Extracted {len(prices)} prices from Google Shopping HTML.")
+        logging.info(f"💰 Extracted {len(prices)} prices.")
         return prices
-
     except Exception as e:
-        logging.error(f"❌ HTML scrape via Crawlbase failed: {str(e)}")
+        logging.error(f"❌ Crawlbase error: {e}")
         return []
 
+# === MOCKUP ROUTE REGISTRATION ===
+from routes.mockups import mockup_bp
+app.register_blueprint(mockup_bp)
 
-# === Cloud Run launch ===
+# === Launch ===
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
