@@ -33,6 +33,7 @@ def resize_image_json():
     try:
         image_bytes = base64.b64decode(base64_image)
         img = Image.open(io.BytesIO(image_bytes))
+        input_format = img.format or "JPEG"  # fallback if unknown
     except Exception as e:
         return jsonify({"error": f"Image decoding error: {str(e)}"}), 400
 
@@ -41,15 +42,21 @@ def resize_image_json():
     new_height = int(new_width / aspect_ratio)
     resized_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
+    # === Mode conversion based on format ===
+    if input_format.upper() == "PNG":
+        resized_img = resized_img.convert("RGBA")
+    else:
+        resized_img = resized_img.convert("RGB")
+
     out_buffer = io.BytesIO()
     try:
-        resized_img.save(out_buffer, format="JPEG")
+        resized_img.save(out_buffer, format=input_format)
     except Exception as e:
         return jsonify({"error": f"Failed to save resized image: {str(e)}"}), 500
 
     out_buffer.seek(0)
     resized_base64 = base64.b64encode(out_buffer.read()).decode("utf-8")
-    return jsonify({"image": resized_base64}), 200
+    return jsonify({"image": resized_base64, "format": input_format}), 200
 
 
 # === UPSCALER ===
