@@ -14,6 +14,17 @@ logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 
+# === Health Check Route ===
+@app.route("/healthz", methods=["GET"])
+def health():
+    return "ok", 200
+
+# === Global Error Handler ===
+@app.errorhandler(Exception)
+def handle_error(e):
+    logging.error(f"Unhandled exception: {e}")
+    return jsonify({"error": str(e)}), 500
+
 # === Home Route ===
 @app.route('/')
 def home():
@@ -22,65 +33,61 @@ def home():
 # === IMAGE RESIZER ===
 @app.route('/resizeJson', methods=['POST'])
 def resize_image_json():
-    data = request.get_json()
-    if not data or 'image' not in data:
-        return jsonify({"error": "No image data found"}), 400
-
-    base64_image = data['image']
-    new_width = int(data.get('width', 300))
-
     try:
+        data = request.get_json(force=True)
+        base64_image = data.get('image')
+        new_width = int(data.get('width', 300))
+
+        if not base64_image:
+            raise ValueError("Missing image data")
+
         image_bytes = base64.b64decode(base64_image)
         img = Image.open(io.BytesIO(image_bytes))
         input_format = img.format or "JPEG"
-    except Exception as e:
-        return jsonify({"error": f"Image decoding error: {str(e)}"}), 400
 
-    original_width, original_height = img.size
-    aspect_ratio = original_width / original_height
-    new_height = int(new_width / aspect_ratio)
-    resized_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        original_width, original_height = img.size
+        aspect_ratio = original_width / original_height
+        new_height = int(new_width / aspect_ratio)
+        resized_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
-    if input_format.upper() == "PNG":
-        resized_img = resized_img.convert("RGBA")
-    else:
-        resized_img = resized_img.convert("RGB")
+        if input_format.upper() == "PNG":
+            resized_img = resized_img.convert("RGBA")
+        else:
+            resized_img = resized_img.convert("RGB")
 
-    out_buffer = io.BytesIO()
-    try:
+        out_buffer = io.BytesIO()
         resized_img.save(out_buffer, format=input_format)
-    except Exception as e:
-        return jsonify({"error": f"Failed to save resized image: {str(e)}"}), 500
+        out_buffer.seek(0)
+        resized_base64 = base64.b64encode(out_buffer.read()).decode("utf-8")
 
-    out_buffer.seek(0)
-    resized_base64 = base64.b64encode(out_buffer.read()).decode("utf-8")
-    return jsonify({"image": resized_base64, "format": input_format}), 200
+        return jsonify({"image": resized_base64, "format": input_format}), 200
+
+    except Exception as e:
+        logging.error(f"Resize failed: {e}")
+        return jsonify({"error": f"Resize failed: {e}"}), 500
 
 # === UPSCALER ===
 @app.route('/upscaleOne', methods=['POST'])
 def upscale_one():
-    data = request.get_json()
-    if not data or 'image' not in data or 'widthInches' not in data:
-        return jsonify({"error": "Missing required fields: image and widthInches"}), 400
-
-    base64_image = data['image']
-    format = data.get('format', 'JPEG').upper()
-    dpi = int(data.get('dpi', 300))
-    width_in = float(data['widthInches'])
-
     try:
+        data = request.get_json(force=True)
+        base64_image = data.get('image')
+        format = data.get('format', 'JPEG').upper()
+        dpi = int(data.get('dpi', 300))
+        width_in = float(data['widthInches'])
+
+        if not base64_image:
+            raise ValueError("Missing image data")
+
         image_bytes = base64.b64decode(base64_image)
         img = Image.open(io.BytesIO(image_bytes))
         img = img.convert("RGBA") if format == "PNG" else img.convert("RGB")
-    except Exception as e:
-        return jsonify({"error": f"Failed to decode or open image: {str(e)}"}), 400
 
-    original_width, original_height = img.size
-    aspect_ratio = original_height / original_width
-    target_width = int(width_in * dpi)
-    target_height = int(target_width * aspect_ratio)
+        original_width, original_height = img.size
+        aspect_ratio = original_height / original_width
+        target_width = int(width_in * dpi)
+        target_height = int(target_width * aspect_ratio)
 
-    try:
         upscaled_img = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
         out_buffer = io.BytesIO()
         save_kwargs = {"format": format, "dpi": (dpi, dpi)}
@@ -91,8 +98,10 @@ def upscale_one():
         upscaled_base64 = base64.b64encode(out_buffer.read()).decode("utf-8")
         dimensions = f"{target_width}x{target_height}"
         return jsonify({"image": upscaled_base64, "dimensions": dimensions}), 200
+
     except Exception as e:
-        return jsonify({"error": f"Failed to upscale image: {str(e)}"}), 500
+        logging.error(f"Upscale failed: {e}")
+        return jsonify({"error": f"Upscale failed: {e}"}), 500
 
 # === PRICE CHECK ===
 @app.route("/api/price-check", methods=["POST"])
@@ -141,7 +150,7 @@ def scrape_google_shopping(keyword):
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "lxml")
 
-        price_elements = soup.find_all("span", string=re.compile(r"£\s?[\d,.]+"))
+        price_elements = soup.find_all("span", string=re.compile(r"£\\s?[\\d,.]+"))
         prices = []
         for elem in price_elements:
             try:
