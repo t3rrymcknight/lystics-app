@@ -165,6 +165,10 @@ def scrape_google_shopping(keyword):
         logging.error(f"❌ Crawlbase error: {e}")
         return []
 
+@app.route("/healthz", methods=["GET"])
+def health():
+    return "ok", 200
+    
 # === MOCKUP ROUTE REGISTRATION ===
 from routes.mockups import mockup_bp
 app.register_blueprint(mockup_bp)
