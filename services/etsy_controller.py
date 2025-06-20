@@ -4,7 +4,7 @@ import datetime
 import openai
 import os
 
-GAS_BASE_URL = "https://script.google.com/macros/s/AKfycbxdyW_RnE8LFKrrm1cFE45kia9pdb_5ytzXGdvflZ8C5oHrd-QTYnRKD5OUTW1DKgCd/exec"
+GAS_BASE_URL = "https://script.google.com/macros/s/AKfycbyQBa8OuGv6mtiwjn-kfASz-ZX9Q_sXUQ7SaESu-uzt5H7J39saSXuXBoo54j-aV9E9/exec"
 LOG_FUNCTION = "logAgentAction"
 GET_ROWS_FUNCTION = "getRowsNeedingProcessing"
 ADMIN_EMAIL = "support@tmk.digital"
