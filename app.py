@@ -160,6 +160,10 @@ def scrape_google_shopping(keyword):
 from routes.mockups import mockup_bp
 app.register_blueprint(mockup_bp)
 
+# === E-AGENT ROUTE REGISTRATION ===
+from routes.etsy_agent import etsy_bp
+app.register_blueprint(etsy_bp)
+
 # === Launch ===
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
