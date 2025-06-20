@@ -12,7 +12,6 @@ COOLDOWN_MINUTES = 30
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-
 def call_gas_function(function_name, params={}, timeout=30):
     url = f"{GAS_BASE_URL}?function={function_name}"
     try:
@@ -21,7 +20,6 @@ def call_gas_function(function_name, params={}, timeout=30):
         return response.json()
     except requests.exceptions.RequestException as e:
         raise Exception(f"{function_name} failed: {str(e)}")
-
 
 def log_action(action, outcome, notes, agent="Worker"):
     params = {
@@ -36,9 +34,7 @@ def log_action(action, outcome, notes, agent="Worker"):
     except Exception as e:
         print(f"⚠️ Failed to log action: {e}")
 
-
 def run_etsy_agent():
-    # Prevent overlapping runs
     if call_gas_function("isWorkerActive").get("active"):
         log_action("Batch Skipped", "Worker already active", "")
         return {"status": "skipped", "message": "Worker already running"}
@@ -58,7 +54,9 @@ def run_etsy_agent():
             try:
                 row_number = row.get("Row")
                 last_attempt = row.get("Last Attempted")
-                status = row.get("Status")
+                status = str(row.get("Status", "")).strip()
+
+                print(f"🪪 Row {row_number} | Status: '{status}' | Last Attempted: {last_attempt}")
 
                 # Cooldown logic
                 if last_attempt:
@@ -112,7 +110,6 @@ def run_etsy_agent():
     finally:
         call_gas_function("markWorkerInactive")
 
-
 def manager_handle_issue(row, error_msg):
     row_number = row.get("Row")
 
@@ -154,7 +151,6 @@ def manager_handle_issue(row, error_msg):
         })
     except Exception as e:
         print(f"⚠️ Failed to send escalation email: {e}")
-
 
 def suggest_next_action_for_row(row, error_msg):
     try:
