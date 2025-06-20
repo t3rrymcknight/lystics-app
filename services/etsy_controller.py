@@ -3,8 +3,8 @@
 import requests
 from datetime import datetime
 
-GAS_BASE_URL = "https://script.google.com/macros/s/YOUR_DEPLOYED_ID/exec"
-ADMIN_EMAIL = "you@example.com"
+GAS_BASE_URL = "https://script.google.com/macros/s/AKfycbxdyW_RnE8LFKrrm1cFE45kia9pdb_5ytzXGdvflZ8C5oHrd-QTYnRKD5OUTW1DKgCd/exec"
+ADMIN_EMAIL = "support@tmk.digital"
 
 def call_gas_function(function_name, params={}):
     url = f"{GAS_BASE_URL}?function={function_name}"
