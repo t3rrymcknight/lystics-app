@@ -4,7 +4,7 @@ import openai
 import os
 import json
 
-GAS_BASE_URL = "https://script.google.com/macros/s/AKfycbwzWFqeLF6mi-7fr-xeBqP7LV_nNwaCmJvguhr4a70p0hDKk48KpnhzaQUsEAGOUK2o/exec"
+GAS_BASE_URL = "https://script.google.com/macros/s/AKfycbwgjazFO5RNmYyaYvOCIzSOyfum0Y10kKuXGAI0Faq91acrkQPmOQrbV3zxCuBy5g/exec"
 LOG_FUNCTION = "logAgentAction"
 GET_ROWS_FUNCTION = "getRowsNeedingProcessing"
 MAX_ROWS_PER_RUN = 50
@@ -50,6 +50,9 @@ def run_etsy_agent():
         rows = call_gas_function(GET_ROWS_FUNCTION).get("rows", [])
         print(f"📦 Fetched {len(rows)} rows for processing")
 
+        for r in rows:
+            print("🧾 Received Row:", json.dumps(r, indent=2))
+
         for row in rows:
             if processed >= MAX_ROWS_PER_RUN:
                 break
@@ -57,7 +60,7 @@ def run_etsy_agent():
             try:
                 row_number = row.get("Row")
                 last_attempt = row.get("Last Attempted")
-                status = str(row.get("Status", "")).strip()
+                status = str(row.get("Status") or "").strip()
 
                 print(f"🪪 Row {row_number} | Status: '{status}' | Last Attempted: {last_attempt}")
 
@@ -80,20 +83,24 @@ def run_etsy_agent():
                     "timestamp": now.isoformat()
                 })
 
-                # Execute action
+                # Call the relevant function
+                response = None
                 if status == "Download Image":
-                    call_gas_function("downloadImagesToDrive", {"row": row_number})
+                    response = call_gas_function("downloadImagesToDrive", {"row": row_number})
                 elif status == "Create Thumbnail":
-                    call_gas_function("copyResizeImageAndStoreUrl", {"row": row_number})
+                    response = call_gas_function("copyResizeImageAndStoreUrl", {"row": row_number})
                 elif status == "Describe Image":
-                    call_gas_function("processImagesWithOpenAI", {"row": row_number})
+                    response = call_gas_function("processImagesWithOpenAI", {"row": row_number})
                 elif status == "Add Mockups":
-                    call_gas_function("updateImagesFromMockupFolders", {"row": row_number})
+                    response = call_gas_function("updateImagesFromMockupFolders", {"row": row_number})
                 elif status == "Ready":
-                    call_gas_function("processListings", {"row": row_number})
+                    response = call_gas_function("processListings", {"row": row_number})
                 else:
                     log_action(f"Row {row_number}", "Skipped", f"Status not actionable: {status}")
                     continue
+
+                if not response or not response.get("success", True):
+                    raise Exception(f"Function {status} failed silently or returned invalid response: {response}")
 
                 msg = f"✅ Row {row_number} succeeded for status: {status}"
                 log_action(f"Row {row_number}", "Success", msg)
@@ -106,7 +113,6 @@ def run_etsy_agent():
                 summary_logs.append(err_msg)
                 manager_handle_issue(row, str(e))
 
-        # Final summary
         result = {"status": "success", "rows_processed": processed}
         log_action("Batch Processed", f"{processed} rows", "End of run", agent="Worker")
 
