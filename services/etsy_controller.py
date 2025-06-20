@@ -42,10 +42,13 @@ def run_etsy_agent():
     call_gas_function("markWorkerActive")
     log_action("Batch Start", "Initiated", "", agent="Worker")
 
+    summary_logs = []
+    processed = 0
+    now = datetime.datetime.now()
+
     try:
         rows = call_gas_function(GET_ROWS_FUNCTION).get("rows", [])
-        processed = 0
-        now = datetime.datetime.now()
+        print(f"📦 Fetched {len(rows)} rows for processing")
 
         for row in rows:
             if processed >= MAX_ROWS_PER_RUN:
@@ -58,7 +61,6 @@ def run_etsy_agent():
 
                 print(f"🪪 Row {row_number} | Status: '{status}' | Last Attempted: {last_attempt}")
 
-                # Cooldown logic
                 if last_attempt:
                     try:
                         last_dt = datetime.datetime.fromisoformat(last_attempt)
@@ -66,9 +68,9 @@ def run_etsy_agent():
                             log_action(f"Row {row_number}", "Skipped", "Cooldown active")
                             continue
                     except:
-                        pass
+                        print(f"⚠️ Failed to parse 'Last Attempted' timestamp for row {row_number}")
 
-                # Mark Processing and log attempt
+                # Mark row as processing
                 call_gas_function("updateRowStatus", {
                     "row": row_number,
                     "new_status": f"Processing: {status}"
@@ -78,7 +80,7 @@ def run_etsy_agent():
                     "timestamp": now.isoformat()
                 })
 
-                # Action based on status
+                # Execute action
                 if status == "Download Image":
                     call_gas_function("downloadImagesToDrive", {"row": row_number})
                 elif status == "Create Thumbnail":
@@ -93,22 +95,34 @@ def run_etsy_agent():
                     log_action(f"Row {row_number}", "Skipped", f"Status not actionable: {status}")
                     continue
 
-                log_action(f"Row {row_number}", "Success", f"Processed {status}")
+                msg = f"✅ Row {row_number} succeeded for status: {status}"
+                log_action(f"Row {row_number}", "Success", msg)
+                summary_logs.append(msg)
                 processed += 1
 
             except Exception as e:
-                log_action(f"Row {row.get('Row')}", "Error", str(e))
+                err_msg = f"❌ Row {row.get('Row')} error: {e}"
+                log_action(f"Row {row.get('Row')}", "Error", err_msg)
+                summary_logs.append(err_msg)
                 manager_handle_issue(row, str(e))
 
+        # Final summary
+        result = {"status": "success", "rows_processed": processed}
         log_action("Batch Processed", f"{processed} rows", "End of run", agent="Worker")
-        return {"status": "success", "rows_processed": processed}
 
     except Exception as e:
+        summary_logs.append(f"🔥 Critical error: {e}")
+        result = {"status": "error", "message": str(e)}
         log_action("Batch Error", "Critical Failure", str(e), agent="Worker")
-        return {"status": "error", "message": str(e)}
 
     finally:
         call_gas_function("markWorkerInactive")
+        call_gas_function("sendAgentSummaryEmail", {
+            "status": result.get("status"),
+            "logs": summary_logs,
+            "summary": f"{processed} rows processed by Worker at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        })
+        return result
 
 def manager_handle_issue(row, error_msg):
     row_number = row.get("Row")
