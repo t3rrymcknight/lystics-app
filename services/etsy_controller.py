@@ -1,15 +1,17 @@
-# services/etsy_controller.py
 import requests
 import datetime
 import openai
 import os
+import json
 
-GAS_BASE_URL = "https://script.google.com/macros/s/AKfycbyQBa8OuGv6mtiwjn-kfASz-ZX9Q_sXUQ7SaESu-uzt5H7J39saSXuXBoo54j-aV9E9/exec"
+GAS_BASE_URL = "https://script.google.com/macros/s/AKfycbwzWFqeLF6mi-7fr-xeBqP7LV_nNwaCmJvguhr4a70p0hDKk48KpnhzaQUsEAGOUK2o/exec"
 LOG_FUNCTION = "logAgentAction"
 GET_ROWS_FUNCTION = "getRowsNeedingProcessing"
-ADMIN_EMAIL = "support@tmk.digital"
+MAX_ROWS_PER_RUN = 50
+COOLDOWN_MINUTES = 30
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
+
 
 def call_gas_function(function_name, params={}, timeout=30):
     url = f"{GAS_BASE_URL}?function={function_name}"
@@ -19,6 +21,7 @@ def call_gas_function(function_name, params={}, timeout=30):
         return response.json()
     except requests.exceptions.RequestException as e:
         raise Exception(f"{function_name} failed: {str(e)}")
+
 
 def log_action(action, outcome, notes, agent="Worker"):
     params = {
@@ -33,55 +36,91 @@ def log_action(action, outcome, notes, agent="Worker"):
     except Exception as e:
         print(f"⚠️ Failed to log action: {e}")
 
+
 def run_etsy_agent():
+    # Prevent overlapping runs
+    if call_gas_function("isWorkerActive").get("active"):
+        log_action("Batch Skipped", "Worker already active", "")
+        return {"status": "skipped", "message": "Worker already running"}
+
+    call_gas_function("markWorkerActive")
     log_action("Batch Start", "Initiated", "", agent="Worker")
 
     try:
         rows = call_gas_function(GET_ROWS_FUNCTION).get("rows", [])
         processed = 0
+        now = datetime.datetime.now()
 
         for row in rows:
-            try:
-                status = row.get("Status")
-                sku = row.get("SKU") or row.get("variantSKU") or row.get("Title") or "?"
+            if processed >= MAX_ROWS_PER_RUN:
+                break
 
+            try:
+                row_number = row.get("Row")
+                last_attempt = row.get("Last Attempted")
+                status = row.get("Status")
+
+                # Cooldown logic
+                if last_attempt:
+                    try:
+                        last_dt = datetime.datetime.fromisoformat(last_attempt)
+                        if (now - last_dt).total_seconds() < COOLDOWN_MINUTES * 60:
+                            log_action(f"Row {row_number}", "Skipped", "Cooldown active")
+                            continue
+                    except:
+                        pass
+
+                # Mark Processing and log attempt
+                call_gas_function("updateRowStatus", {
+                    "row": row_number,
+                    "new_status": f"Processing: {status}"
+                })
+                call_gas_function("updateLastAttempted", {
+                    "row": row_number,
+                    "timestamp": now.isoformat()
+                })
+
+                # Action based on status
                 if status == "Download Image":
-                    call_gas_function("downloadImagesToDrive", {"sku": sku})
+                    call_gas_function("downloadImagesToDrive", {"row": row_number})
                 elif status == "Create Thumbnail":
-                    call_gas_function("copyResizeImageAndStoreUrl", {"sku": sku})
+                    call_gas_function("copyResizeImageAndStoreUrl", {"row": row_number})
                 elif status == "Describe Image":
-                    call_gas_function("processImagesWithOpenAI", {"sku": sku})
+                    call_gas_function("processImagesWithOpenAI", {"row": row_number})
                 elif status == "Add Mockups":
-                    call_gas_function("updateImagesFromMockupFolders", {"sku": sku})
+                    call_gas_function("updateImagesFromMockupFolders", {"row": row_number})
                 elif status == "Ready":
-                    call_gas_function("processListings", {"sku": sku})
+                    call_gas_function("processListings", {"row": row_number})
                 else:
-                    log_action(f"Row {row.get('Row')}", "Skipped", f"Status is not actionable: {status}")
+                    log_action(f"Row {row_number}", "Skipped", f"Status not actionable: {status}")
                     continue
 
-                log_action(f"Row {row.get('Row')}", "Success", f"{sku} processed for {status}")
+                log_action(f"Row {row_number}", "Success", f"Processed {status}")
                 processed += 1
 
             except Exception as e:
                 log_action(f"Row {row.get('Row')}", "Error", str(e))
                 manager_handle_issue(row, str(e))
 
-        log_action("Batch Processed", f"{processed} rows", f"in agent run", agent="Worker")
+        log_action("Batch Processed", f"{processed} rows", "End of run", agent="Worker")
         return {"status": "success", "rows_processed": processed}
 
     except Exception as e:
         log_action("Batch Error", "Critical Failure", str(e), agent="Worker")
         return {"status": "error", "message": str(e)}
 
+    finally:
+        call_gas_function("markWorkerInactive")
+
+
 def manager_handle_issue(row, error_msg):
-    sku = row.get("SKU") or row.get("variantSKU") or "?"
     row_number = row.get("Row")
 
     try:
         call_gas_function("logManagerThought", {
             "timestamp": datetime.datetime.now().isoformat(),
             "row": row_number,
-            "sku": sku,
+            "sku": row.get("Title") or "Unknown",
             "thought": f"Investigating error: {error_msg}",
             "confidence": "0.70"
         })
@@ -108,13 +147,14 @@ def manager_handle_issue(row, error_msg):
     try:
         call_gas_function("sendEscalationEmail", {
             "row": row_number,
-            "sku": sku,
+            "sku": row.get("Title") or "Unknown",
             "status": row.get("Status"),
             "error": error_msg,
             "suggestion": suggestion.get("reason")
         })
     except Exception as e:
         print(f"⚠️ Failed to send escalation email: {e}")
+
 
 def suggest_next_action_for_row(row, error_msg):
     try:
