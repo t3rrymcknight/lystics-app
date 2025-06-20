@@ -41,5 +41,5 @@ COPY . .
 ENV PORT=8080
 EXPOSE 8080
 
-# Start with Gunicorn
-CMD ["gunicorn", "-b", "0.0.0.0:8080", "app:app"]
+# Start with Gunicorn (patched timeout)
+CMD ["gunicorn", "-b", "0.0.0.0:8080", "app:app", "--timeout", "90"]
