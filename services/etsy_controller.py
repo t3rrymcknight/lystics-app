@@ -86,25 +86,31 @@ def run_etsy_agent():
                     "row": row_number,
                     "timestamp": now.isoformat()
                 })
+                print(f"🕓 Updated Last Attempted for row {row_number}")
 
                 print(f"🧠 Calling function for status: {status} (Row {row_number})")
 
                 response = None
                 if status == "Download Image":
-                    print(f"📥 Calling: downloadImagesToDrive")
+                    print(f"📤 Triggering GAS function: downloadImagesToDrive for row {row_number}")
                     response = call_gas_function("downloadImagesToDrive", {"row": row_number})
+                    summary_logs.append(f"📤 Function '{status}' executed for row {row_number}. Response: {response}")
                 elif status == "Create Thumbnail":
-                    print(f"🖼️ Calling: copyResizeImageAndStoreUrl")
+                    print(f"📤 Triggering GAS function: copyResizeImageAndStoreUrl for row {row_number}")
                     response = call_gas_function("copyResizeImageAndStoreUrl", {"row": row_number})
+                    summary_logs.append(f"📤 Function '{status}' executed for row {row_number}. Response: {response}")
                 elif status == "Describe Image":
-                    print(f"🧠 Calling: processImagesWithOpenAI")
+                    print(f"📤 Triggering GAS function: processImagesWithOpenAI for row {row_number}")
                     response = call_gas_function("processImagesWithOpenAI", {"row": row_number})
+                    summary_logs.append(f"📤 Function '{status}' executed for row {row_number}. Response: {response}")
                 elif status == "Add Mockups":
-                    print(f"🎨 Calling: updateImagesFromMockupFolders")
+                    print(f"📤 Triggering GAS function: updateImagesFromMockupFolders for row {row_number}")
                     response = call_gas_function("updateImagesFromMockupFolders", {"row": row_number})
+                    summary_logs.append(f"📤 Function '{status}' executed for row {row_number}. Response: {response}")
                 elif status == "Ready":
-                    print(f"🚀 Calling: processListings")
+                    print(f"📤 Triggering GAS function: processListings for row {row_number}")
                     response = call_gas_function("processListings", {"row": row_number})
+                    summary_logs.append(f"📤 Function '{status}' executed for row {row_number}. Response: {response}")
                 else:
                     print(f"❓ Unknown status '{status}' for Row {row_number}")
                     log_action(f"Row {row_number}", "Skipped", f"Status not actionable: {status}")
