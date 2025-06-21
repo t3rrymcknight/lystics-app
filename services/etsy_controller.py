@@ -4,7 +4,7 @@ import openai
 import os
 import json
 
-GAS_BASE_URL = "https://script.google.com/macros/s/AKfycbxdDQk2NXfpKaH8qyvlOVXfC4LR6Oa-7WV5f902XzAyRKsfXwvhT7Ud1aQTpnB9ZDk-/exec"
+GAS_BASE_URL = "https://script.google.com/macros/s/AKfycbyhgS1l_c4Jpb7oxbPavbUZRl2hr1Dks59IHkCb4sTbgXCFdmkiR96U6F_Vl5jXhY5y/exec"
 LOG_FUNCTION = "logAgentAction"
 GET_ROWS_FUNCTION = "getRowsNeedingProcessing"
 MAX_ROWS_PER_RUN = 50
