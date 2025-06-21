@@ -45,6 +45,7 @@ def run_etsy_agent():
     summary_logs = []
     processed = 0
     now = datetime.datetime.now()
+    response = None
 
     try:
         rows = call_gas_function(GET_ROWS_FUNCTION).get("rows", [])
