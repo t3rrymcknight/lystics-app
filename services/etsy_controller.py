@@ -11,8 +11,6 @@ MAX_ROWS_PER_RUN = 50
 COOLDOWN_MINUTES = 30
 
 api_key = os.getenv("OPENAI_API_KEY")
-if not api_key:
-    raise EnvironmentError("Required environment variable OPENAI_API_KEY is not set")
 client = OpenAI(api_key=api_key)
 
 def call_gas_function(function_name, params={}, timeout=30):
