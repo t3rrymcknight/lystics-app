@@ -1,6 +1,6 @@
 import requests
 import datetime
-import openai
+from openai import OpenAI
 import os
 import json
 
@@ -10,7 +10,7 @@ GET_ROWS_FUNCTION = "getRowsNeedingProcessing"
 MAX_ROWS_PER_RUN = 50
 COOLDOWN_MINUTES = 30
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def call_gas_function(function_name, params={}, timeout=30):
     url = f"{GAS_BASE_URL}?function={function_name}"
@@ -201,7 +201,7 @@ def suggest_next_action_for_row(row, error_msg):
         context = f"Row data: {json.dumps(row)}\nError: {error_msg}\n"
         prompt = f"You are a helpful agent managing an Etsy listing pipeline. {context}What is the next action I should take to resolve this? Reply in JSON with action, new_status (if any), and reason."
 
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are an Etsy product operations agent."},
