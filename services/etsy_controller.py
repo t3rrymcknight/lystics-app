@@ -4,7 +4,7 @@ import openai
 import os
 import json
 
-GAS_BASE_URL = "https://script.google.com/macros/s/AKfycbyhgS1l_c4Jpb7oxbPavbUZRl2hr1Dks59IHkCb4sTbgXCFdmkiR96U6F_Vl5jXhY5y/exec"
+GAS_BASE_URL = "https://script.google.com/macros/s/AKfycbxlX6O1yD1HBfixFvI2VzZxP6nQzRe5Sd5hfnQrBxDD8wwGjFkxBMIl_k9yLT9U_iI/exec"
 LOG_FUNCTION = "logAgentAction"
 GET_ROWS_FUNCTION = "getRowsNeedingProcessing"
 MAX_ROWS_PER_RUN = 50
@@ -17,7 +17,12 @@ def call_gas_function(function_name, params={}, timeout=30):
     try:
         response = requests.post(url, json=params, timeout=timeout)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        # Handle the Apps Script doPost wrapper which returns { success, result } or { success, error }
+        if not data.get("success", False):
+            raise Exception(f"{function_name} error: {data.get('error', 'Unknown error')}")
+        # Unwrap the actual function result
+        return data.get("result", {})
     except requests.exceptions.RequestException as e:
         raise Exception(f"{function_name} failed: {str(e)}")
 
