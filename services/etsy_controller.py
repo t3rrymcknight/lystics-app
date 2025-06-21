@@ -83,21 +83,30 @@ def run_etsy_agent():
                     "timestamp": now.isoformat()
                 })
 
-                # Call the relevant function
+                print(f"🧠 Calling function for status: {status} (Row {row_number})")
+
                 response = None
                 if status == "Download Image":
+                    print(f"📥 Calling: downloadImagesToDrive")
                     response = call_gas_function("downloadImagesToDrive", {"row": row_number})
                 elif status == "Create Thumbnail":
+                    print(f"🖼️ Calling: copyResizeImageAndStoreUrl")
                     response = call_gas_function("copyResizeImageAndStoreUrl", {"row": row_number})
                 elif status == "Describe Image":
+                    print(f"🧠 Calling: processImagesWithOpenAI")
                     response = call_gas_function("processImagesWithOpenAI", {"row": row_number})
                 elif status == "Add Mockups":
+                    print(f"🎨 Calling: updateImagesFromMockupFolders")
                     response = call_gas_function("updateImagesFromMockupFolders", {"row": row_number})
                 elif status == "Ready":
+                    print(f"🚀 Calling: processListings")
                     response = call_gas_function("processListings", {"row": row_number})
                 else:
+                    print(f"❓ Unknown status '{status}' for Row {row_number}")
                     log_action(f"Row {row_number}", "Skipped", f"Status not actionable: {status}")
                     continue
+
+                print(f"🔁 Response from {status} function:", response)
 
                 if not response or not response.get("success", True):
                     raise Exception(f"Function {status} failed silently or returned invalid response: {response}")
@@ -113,7 +122,7 @@ def run_etsy_agent():
                 summary_logs.append(err_msg)
                 manager_handle_issue(row, str(e))
 
-        result = {"status": "success", "rows_processed": processed}
+        result = {"status": "success", "rows_processed": processed, "response": response}
         log_action("Batch Processed", f"{processed} rows", "End of run", agent="Worker")
 
     except Exception as e:
