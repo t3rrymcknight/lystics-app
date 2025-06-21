@@ -10,7 +10,10 @@ GET_ROWS_FUNCTION = "getRowsNeedingProcessing"
 MAX_ROWS_PER_RUN = 50
 COOLDOWN_MINUTES = 30
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    raise EnvironmentError("Required environment variable OPENAI_API_KEY is not set")
+client = OpenAI(api_key=api_key)
 
 def call_gas_function(function_name, params={}, timeout=30):
     url = f"{GAS_BASE_URL}?function={function_name}"
