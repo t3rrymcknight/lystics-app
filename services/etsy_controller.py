@@ -4,7 +4,7 @@ import openai
 import os
 import json
 
-GAS_BASE_URL = "https://script.google.com/macros/s/AKfycbwgjazFO5RNmYyaYvOCIzSOyfum0Y10kKuXGAI0Faq91acrkQPmOQrbV3zxCuBy5g/exec"
+GAS_BASE_URL = "https://script.google.com/macros/s/AKfycbxdDQk2NXfpKaH8qyvlOVXfC4LR6Oa-7WV5f902XzAyRKsfXwvhT7Ud1aQTpnB9ZDk-/exec"
 LOG_FUNCTION = "logAgentAction"
 GET_ROWS_FUNCTION = "getRowsNeedingProcessing"
 MAX_ROWS_PER_RUN = 50
@@ -48,7 +48,10 @@ def run_etsy_agent():
     response = None
 
     try:
-        rows = call_gas_function(GET_ROWS_FUNCTION).get("rows", [])
+        response_json = call_gas_function(GET_ROWS_FUNCTION)
+        print("🧪 Raw GAS Response:", json.dumps(response_json, indent=2))
+
+        rows = response_json.get("rows", [])
         print(f"📦 Fetched {len(rows)} rows for processing")
 
         for r in rows:
