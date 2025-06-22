@@ -7,7 +7,7 @@ from openai import OpenAI
 # ------------------------------- #
 #  Google Apps Script Endpoints   #
 # ------------------------------- #
-GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbwd6V1hVlhkoROka7czqCToIGEHIrDjbNH1oh9gSrkggU_RZWKes4zz31Tcg9qpYnlP/exec"
+GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbw7kHU5FzsWElC7QFL9iZcD_8bCK8BLmQMC1ds1-iJZKvIGRvkkp4cW7t2gEz9n5YL9/exec"
 LOG_FUNCTION        = "logAgentAction"
 GET_ROWS_FUNCTION   = "getRowsNeedingProcessing"
 MAX_ROWS_PER_RUN    = 20
@@ -127,8 +127,13 @@ def run_etsy_agent():
                 response = call_gas_function(fn_name, {"row": row_number})
                 print(f"🔁 Response from {status} function:", response)
 
-                if not response or not response.get("success", True):
-                    raise Exception(f"Function {status} failed silently or returned invalid response: {response}")
+                if response is None:
+                    raise Exception(f"Function {status} failed to return any response.")
+
+                if not isinstance(response, dict) or response.get("error"):
+                    raise Exception(f"Function {status} returned error: {response.get('error', 'Unknown')}")
+
+                # Consider it success if no error was returned
 
                 msg = f"✅ Row {row_number} succeeded for status: {status}"
                 log_action(f"Row {row_number}", "Success", msg)
