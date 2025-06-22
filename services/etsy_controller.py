@@ -7,7 +7,7 @@ import openai
 # ------------------------------- #
 #  Google Apps Script Endpoints   #
 # ------------------------------- #
-GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbw7kHU5FzsWElC7QFL9iZcD_8bCK8BLmQMC1ds1-iJZKvIGRvkkp4cW7t2gEz9n5YL9/exec"
+GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbyajVgBd-jXVYmlj-oNJyLiEfWOfY_qX8gh1k3nmE-cfKVornsxGbvX5kVA0jARgtH1/exec"
 LOG_FUNCTION        = "logAgentAction"
 GET_ROWS_FUNCTION   = "getRowsNeedingProcessing"
 MAX_ROWS_PER_RUN    = 20
@@ -74,77 +74,64 @@ def run_etsy_agent():
         rows = response_json.get("rows", [])
         print(f"📦 Fetched {len(rows)} rows for processing")
 
-        for r in rows:
-            print("🧾 Received Row:", json.dumps(r, indent=2))
-
-        # 3. Per-row loop
+        from collections import defaultdict
+        grouped_rows = defaultdict(list)
         for row in rows:
+            grouped_rows[str(row.get("Status") or "").strip()].append(row)
+
+        fn_map = {
+            "Download Image": "downloadImagesToDrive",
+            "Create Thumbnail": "copyResizeImageAndStoreUrl",
+            "Describe Image": "processImagesWithOpenAI",
+            "Add Mockups": "updateImagesFromMockupFolders",
+            "Ready": "processListings"
+        }
+
+        for status, group in grouped_rows.items():
             if processed >= MAX_ROWS_PER_RUN:
                 break
 
-            row_number   = row.get("Row")
-            last_attempt = row.get("Last Attempted")
-            status       = str(row.get("Status") or "").strip()
+            fn_name = fn_map.get(status)
+            if not fn_name:
+                for row in group:
+                    log_action(f"Row {row['Row']}", "Skipped", f"Status not actionable: {status}")
+                continue
 
-            print(f"🪪 Row {row_number} | Status: '{status}' | Last Attempted: {last_attempt}")
-
-            # Cool-down
-            if last_attempt:
-                try:
-                    last_dt = datetime.datetime.fromisoformat(last_attempt)
-                    if (now - last_dt).total_seconds() < COOLDOWN_MINUTES * 60:
-                        log_action(f"Row {row_number}", "Skipped", "Cooldown active")
-                        continue
-                except ValueError:
-                    print(f"⚠️ Failed to parse 'Last Attempted' timestamp for row {row_number}")
-
-            # Mark “processing”
-            call_gas_function("updateLastAttempted", {
-                "row":       row_number,
-                "timestamp": now.isoformat()
-            })
-            call_gas_function("updateRowProgress", {"row": row_number, "progress": "Processing"})
-            print(f"🕓 Updated Last Attempted for row {row_number}")
-
-            # Dispatch
             try:
-                if status == "Download Image":
-                    fn_name = "downloadImagesToDrive"
-                elif status == "Create Thumbnail":
-                    fn_name = "copyResizeImageAndStoreUrl"
-                elif status == "Describe Image":
-                    fn_name = "processImagesWithOpenAI"
-                elif status == "Add Mockups":
-                    fn_name = "updateImagesFromMockupFolders"
-                elif status == "Ready":
-                    fn_name = "processListings"
-                else:
-                    print(f"❓ Unknown status '{status}' for Row {row_number}")
-                    log_action(f"Row {row_number}", "Skipped", f"Status not actionable: {status}")
-                    continue
-
-                print(f"📤 Triggering GAS function: {fn_name} for row {row_number}")
-                response = call_gas_function(fn_name, {"row": row_number})
-                print(f"🔁 Response from {status} function:", response)
+                print(f"📤 Triggering GAS function: {fn_name} for status group '{status}' ({len(group)} rows)")
+                response = call_gas_function(fn_name)
 
                 if response is None:
                     raise Exception(f"Function {status} failed to return any response.")
-
                 if not isinstance(response, dict) or response.get("error"):
                     raise Exception(f"Function {status} returned error: {response.get('error', 'Unknown')}")
 
-                # Consider it success if no error was returned
-
-                msg = f"✅ Row {row_number} succeeded for status: {status}"
-                log_action(f"Row {row_number}", "Success", msg)
-                summary_logs.append(msg)
-                processed += 1
+                for row in group:
+                    row_number = row.get("Row")
+                    call_gas_function("updateLastAttempted", {
+                        "row": row_number,
+                        "timestamp": now.isoformat()
+                    })
+                    call_gas_function("updateRowProgress", {"row": row_number, "progress": "Processing"})
+                    log_action(f"Row {row_number}", "Success", f"{status} succeeded via batch call")
+                    summary_logs.append(f"✅ Row {row_number} succeeded for status: {status}")
+                    processed += 1
+                    if processed >= MAX_ROWS_PER_RUN:
+                        break
 
             except Exception as e:
-                err_msg = f"❌ Row {row_number} error: {e}"
-                log_action(f"Row {row_number}", "Error", err_msg)
-                summary_logs.append(err_msg)
-                manager_handle_issue(row, str(e))
+                for row in group:
+                    row_number = row.get("Row")
+                    err_msg = f"❌ Row {row_number} error during batch call: {e}"
+                    log_action(f"Row {row_number}", "Error", err_msg)
+                    summary_logs.append(err_msg)
+                    manager_handle_issue(row, str(e))
+                    if processed >= MAX_ROWS_PER_RUN:
+                        break
+
+        advisor_output = run_llm_column_advisor()
+        if advisor_output:
+            summary_logs.append("🧠 Column Advisor:\n" + advisor_output)
 
         result = {"status": "success", "rows_processed": processed, "response": response}
         log_action("Batch Processed", f"{processed} rows", "End of run", agent="Worker")
@@ -264,3 +251,44 @@ def suggest_next_action_for_row(row, error_msg):
             "action": "escalate",
             "reason": f"LLM failed or returned unparseable output: {e}"
         }
+
+# ------------------------------- #
+#     LLM Column Advisor Task     #
+# ------------------------------- #
+def run_llm_column_advisor():
+    try:
+        api_key = call_gas_function("getOpenAIKey").get("key")
+        openai.api_key = api_key
+
+        # Sample column headers from the Etsy listing sheet
+        column_headers = [
+            "Status", "Type", "Title", "SKU", "Price", "Select Category", "Section", "Images", "File",
+            "Tags", "Primary colour", "Secondary colour", "Occasion", "Holiday", "Description", "Section ID",
+            "Category", "Should Auto Renew", "Folder ID", "Image URL", "Image Name", "Drive URL", "Thumbnail",
+            "Upscaled", "Timestamp", "Dimensions", "Format", "DPI", "Last Size Attempted", "Prompt",
+            "Mockups", "Mockups Folder ID", "Notes", "Progress", "Last Attempted", "Bot Status"
+        ]
+
+        prompt = (
+            f"Here is a list of column headers used in an Etsy auto-listing spreadsheet:\n\n{json.dumps(column_headers, indent=2)}\n\n"
+            "As an expert e-commerce agent, provide a brief assessment of these columns. "
+            "Assess if the price and title are well optimised based on the type and section the product is listed under from your knowledge of Etsy."
+        )
+
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a senior e-commerce analyst."},
+                {"role": "user",   "content": prompt}
+            ],
+            temperature=0.5
+        )
+
+        content = response.choices[0].message["content"]
+        print("🔍 Column Advisor Output:\n", content)
+        return content
+
+    except Exception as e:
+        print("❌ LLM Column Advisor failed:", e)
+        return None
+
