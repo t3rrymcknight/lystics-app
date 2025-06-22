@@ -7,19 +7,11 @@ from openai import OpenAI
 # ------------------------------- #
 #  Google Apps Script Endpoints   #
 # ------------------------------- #
-GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbxzCs_GsLXR88lWcjv8viZMbZLJRfmcZ9JuDh0G7nEvxGC-DT72OFLEImoqXKvOze-z/exec"
+GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbwd6V1hVlhkoROka7czqCToIGEHIrDjbNH1oh9gSrkggU_RZWKes4zz31Tcg9qpYnlP/exec"
 LOG_FUNCTION        = "logAgentAction"
 GET_ROWS_FUNCTION   = "getRowsNeedingProcessing"
 MAX_ROWS_PER_RUN    = 20
 COOLDOWN_MINUTES    = 1
-
-# -------- OpenAI (lazy) -------- #
-def get_openai_client():
-    """
-    Create an OpenAI client only when it’s actually needed.
-    Avoids startup crashes if the env var is missing.
-    """
-    return OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ------------------------------- #
 #        Helper Functions         #
@@ -182,10 +174,26 @@ def manager_handle_issue(row, error_msg):
             "thought":   f"Investigating error: {error_msg}",
             "confidence": "0.70"
         })
+        call_gas_function("incrementProgressErrorCount", {"row": row_number})
     except Exception as log_err:
         print(f"⚠️ Failed to log to Thinking tab: {log_err}")
 
     suggestion = suggest_next_action_for_row(row, error_msg)
+
+    try:
+        error_count = call_gas_function("getProgressErrorCount", {"row": row_number}).get("count", 0)
+    except Exception as e:
+        error_count = 0
+
+    if error_count >= 3:
+        suggestion["action"] = "reset_status"
+        suggestion["new_status"] = row.get("Status")  # fallback to current
+        suggestion["reason"] = "Auto-reset after 3 failed attempts"
+
+    try:
+        call_gas_function("updateRowNotes", {"row": row_number, "notes": suggestion.get("reason")})
+    except Exception as e:
+        print(f"⚠️ Failed to update row notes: {e}")
 
     if suggestion.get("action") == "reset_status":
         try:
@@ -224,6 +232,9 @@ def suggest_next_action_for_row(row, error_msg):
     { action, new_status?, reason }
     """
     try:
+        api_key = call_gas_function("getOpenAIKey").get("key")
+        client = OpenAI(api_key=api_key)
+
         context = (
             f"Row data: {json.dumps(row)}\n"
             f"Error: {error_msg}\n\n"
@@ -232,7 +243,6 @@ def suggest_next_action_for_row(row, error_msg):
             "Reply in JSON with fields: action, new_status (if any), reason."
         )
 
-        client = get_openai_client()
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
