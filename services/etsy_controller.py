@@ -2,7 +2,7 @@ import requests
 import datetime
 import os
 import json
-from openai import OpenAI
+import openai
 
 # ------------------------------- #
 #  Google Apps Script Endpoints   #
@@ -238,7 +238,7 @@ def suggest_next_action_for_row(row, error_msg):
     """
     try:
         api_key = call_gas_function("getOpenAIKey").get("key")
-        client = OpenAI(api_key=api_key)
+        openai.api_key = api_key
 
         context = (
             f"Row data: {json.dumps(row)}\n"
@@ -248,7 +248,7 @@ def suggest_next_action_for_row(row, error_msg):
             "Reply in JSON with fields: action, new_status (if any), reason."
         )
 
-        response = client.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are an Etsy product operations agent."},
@@ -256,8 +256,7 @@ def suggest_next_action_for_row(row, error_msg):
             ],
             temperature=0.3
         )
-
-        content = response.choices[0].message.content
+        content = response.choices[0].message["content"]
         return json.loads(content)
 
     except Exception as e:
