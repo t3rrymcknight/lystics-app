@@ -10,8 +10,8 @@ from openai import OpenAI
 GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbxzCs_GsLXR88lWcjv8viZMbZLJRfmcZ9JuDh0G7nEvxGC-DT72OFLEImoqXKvOze-z/exec"
 LOG_FUNCTION        = "logAgentAction"
 GET_ROWS_FUNCTION   = "getRowsNeedingProcessing"
-MAX_ROWS_PER_RUN    = 50
-COOLDOWN_MINUTES    = 30
+MAX_ROWS_PER_RUN    = 20
+COOLDOWN_MINUTES    = 1
 
 # -------- OpenAI (lazy) -------- #
 def get_openai_client():
@@ -111,7 +111,7 @@ def run_etsy_agent():
                 "row":       row_number,
                 "timestamp": now.isoformat()
             })
-            call_gas_function("updateRowProgress", {"row": row_number, "progress": "Bot Status: Processing"})
+            call_gas_function("updateRowStatus", {"row": row_number, "new_status": "Bot Status: Processing"})
             print(f"🕓 Updated Last Attempted for row {row_number}")
 
             # Dispatch
