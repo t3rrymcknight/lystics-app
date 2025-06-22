@@ -111,7 +111,7 @@ def run_etsy_agent():
                 "row":       row_number,
                 "timestamp": now.isoformat()
             })
-            call_gas_function("updateRowStatus", {"row": row_number, "new_status": "Bot Status: Processing"})
+            call_gas_function("updateRowProgress", {"row": row_number, "progress": "Processing"})
             print(f"🕓 Updated Last Attempted for row {row_number}")
 
             # Dispatch
