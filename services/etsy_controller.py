@@ -7,7 +7,7 @@ import openai
 # ------------------------------- #
 #  Google Apps Script Endpoints   #
 # ------------------------------- #
-GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbyajVgBd-jXVYmlj-oNJyLiEfWOfY_qX8gh1k3nmE-cfKVornsxGbvX5kVA0jARgtH1/exec"
+GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbx1aIXi1ptNNwrGGgbleLIKm4YZI8RJBH3pHRDobmGLcN8gyqy1dalr0y6yuxJ_b1ci/exec"
 LOG_FUNCTION        = "logAgentAction"
 GET_ROWS_FUNCTION   = "getRowsNeedingProcessing"
 MAX_ROWS_PER_RUN    = 20
@@ -80,11 +80,22 @@ def run_etsy_agent():
             grouped_rows[str(row.get("Status") or "").strip()].append(row)
 
         fn_map = {
-            "Download Image": "downloadImagesToDrive",
-            "Create Thumbnail": "copyResizeImageAndStoreUrl",
-            "Describe Image": "processImagesWithOpenAI",
-            "Add Mockups": "updateImagesFromMockupFolders",
-            "Ready": "processListings"
+    "Download Image": "downloadImagesToDrive",
+    "Create Thumbnail": "copyResizeImageAndStoreUrl",
+    "Describe Image": "processImagesWithOpenAI",
+    "Add Mockups": "updateImagesFromMockupFolders",
+    "Ready": "processListings",
+    "Upscale Image": "upscaleImageVariants",
+    "Generate Mockup JSON": "generateMockupJson",
+    "Upload Files": "uploadDigitalFiles",
+    "Upload Images": "uploadImageAssets",
+    "Vectorize": "vectorizeSourceSvg",
+    "Create Description": "findReplaceInDescription",
+    "Create Folder": "processCreateFolders",
+    "Rename Files": "updateFileNamesWithImageName",
+    "Move Files": "moveFilesAndImagesToFolder",
+    "Generate": "generateMockupsFromDrive",            
+    "Create JSON": "buildMockupJsonFromFolderStructure" 
         }
 
         for status, group in grouped_rows.items():
@@ -256,39 +267,5 @@ def suggest_next_action_for_row(row, error_msg):
 #     LLM Column Advisor Task     #
 # ------------------------------- #
 def run_llm_column_advisor():
-    try:
-        api_key = call_gas_function("getOpenAIKey").get("key")
-        openai.api_key = api_key
-
-        # Sample column headers from the Etsy listing sheet
-        column_headers = [
-            "Status", "Type", "Title", "SKU", "Price", "Select Category", "Section", "Images", "File",
-            "Tags", "Primary colour", "Secondary colour", "Occasion", "Holiday", "Description", "Section ID",
-            "Category", "Should Auto Renew", "Folder ID", "Image URL", "Image Name", "Drive URL", "Thumbnail",
-            "Upscaled", "Timestamp", "Dimensions", "Format", "DPI", "Last Size Attempted", "Prompt",
-            "Mockups", "Mockups Folder ID", "Notes", "Progress", "Last Attempted", "Bot Status"
-        ]
-
-        prompt = (
-            f"Here is a list of column headers used in an Etsy auto-listing spreadsheet:\n\n{json.dumps(column_headers, indent=2)}\n\n"
-            "As an expert e-commerce agent, provide a brief assessment of these columns. "
-            "Assess if the price and title are well optimised based on the type and section the product is listed under from your knowledge of Etsy."
-        )
-
-        response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a senior e-commerce analyst."},
-                {"role": "user",   "content": prompt}
-            ],
-            temperature=0.5
-        )
-
-        content = response.choices[0].message["content"]
-        print("🔍 Column Advisor Output:\n", content)
-        return content
-
-    except Exception as e:
-        print("❌ LLM Column Advisor failed:", e)
-        return None
-
+    log_action("🧠 Column Advisor", "Info", "LLM Advisor test ran successfully.", agent="LLM")
+    return "LLM test ran — basic log only."
