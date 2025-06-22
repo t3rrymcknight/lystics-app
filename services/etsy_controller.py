@@ -107,14 +107,11 @@ def run_etsy_agent():
                     print(f"⚠️ Failed to parse 'Last Attempted' timestamp for row {row_number}")
 
             # Mark “processing”
-            call_gas_function("updateRowStatus", {
-                "row": row_number,
-                "new_status": f"Processing: {status}"
-            })
             call_gas_function("updateLastAttempted", {
                 "row":       row_number,
                 "timestamp": now.isoformat()
             })
+            call_gas_function("updateRowProgress", {"row": row_number, "progress": "Bot Status: Processing"})
             print(f"🕓 Updated Last Attempted for row {row_number}")
 
             # Dispatch
