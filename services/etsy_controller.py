@@ -7,7 +7,7 @@ import openai
 # ------------------------------- #
 #  Google Apps Script Endpoints   #
 # ------------------------------- #
-GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbzVIf0RHxtYg9tRI-HKb_kb8TXsNS_pEF-Jeg3a6rGlaPYjmFach7Gi1PIzNF_5AXf0/exec"
+GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbwtehfSyjgixOsOXxEG-vPdWHkOhXXCvNeYJsd9OYeqs4oHKqq_1Hk0I_PlTeeUn7F4/exec"
 LOG_FUNCTION        = "logAgentAction"
 GET_ROWS_FUNCTION   = "getRowsNeedingProcessing"
 MAX_ROWS_PER_RUN    = 20
@@ -95,7 +95,8 @@ def run_etsy_agent():
     "Rename Files": "updateFileNamesWithImageName",
     "Move Files": "moveFilesAndImagesToFolder",
     "Generate": "generateMockupsFromDrive",            
-    "Create JSON": "buildMockupJsonFromFolderStructure" 
+    "Create JSON": "buildMockupJsonFromFolderStructure",
+    "Create PDF": "processCreatePDF"
         }
 
         for status, group in grouped_rows.items():
@@ -267,5 +268,77 @@ def suggest_next_action_for_row(row, error_msg):
 #     LLM Column Advisor Task     #
 # ------------------------------- #
 def run_llm_column_advisor():
-    log_action("🧠 Column Advisor", "Info", "LLM Advisor test ran successfully.", agent="LLM")
-    return "LLM test ran — basic log only."
+    """
+    Fetch raw sheet data → Ask GPT which rows need download → Apply updates in GAS →
+    Log LLM reasoning to 'Thinking' and 'Log'.
+    """
+    try:
+        api_key = call_gas_function("getOpenAIKey").get("key")
+        openai.api_key = api_key
+
+        raw_rows = call_gas_function("getRowsForDownloadAdvisory")
+        if not raw_rows:
+            return "No data found for advisory."
+
+        sample = json.dumps(raw_rows[:20], indent=2)
+
+        prompt = (
+            f"The following are rows from an Etsy listing sheet:\n\n{sample}\n\n"
+            "Each row contains a Title, Image URL, Drive URL, Status, and Row number.\n"
+            "Your task: Identify which rows should have Status = 'Download Image'.\n"
+            "Rules:\n"
+            "- Image URL must be present\n"
+            "- Drive URL should be missing or empty\n"
+            "- Status should be empty or missing\n\n"
+            "Return a JSON array of objects like:\n"
+            "[ {\"Row\": 4, \"new_status\": \"Download Image\", \"reason\": \"...\" }, ... ]"
+        )
+
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a data operations assistant for Etsy automation."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+
+        content = response.choices[0].message["content"].strip()
+        parsed_updates = json.loads(content)
+
+        if not parsed_updates:
+            log_action("🧠 LLM Advisor", "No changes", "No rows matched the criteria", agent="LLM")
+            return "LLM did not recommend any updates."
+
+        # Build a lookup for row number to row
+        row_lookup = {int(row["Row"]): row for row in raw_rows}
+
+        # Apply the updates in GAS
+        apply_result = call_gas_function("applyDownloadImageStatusFromLLM", parsed_updates)
+
+        # Log thoughts + decisions
+        timestamp = datetime.datetime.now().isoformat()
+        for update in parsed_updates:
+            row = update.get("Row")
+            reason = update.get("reason", "Marked for download based on image presence and missing status.")
+            sku = row_lookup.get(int(row), {}).get("Title", "Unknown")
+
+            call_gas_function("logManagerThought", {
+                "timestamp": timestamp,
+                "row": row,
+                "sku": sku,
+                "thought": reason,
+                "confidence": "0.90"
+            })
+
+            log_action(
+                action=f"Row {row}",
+                outcome="Download Image Set",
+                notes=reason,
+                agent="LLM"
+            )
+
+        return f"LLM marked {apply_result.get('updated')} row(s) and logged reasoning."
+
+    except Exception as e:
+        return f"LLM column advisor failed: {e}"
