@@ -159,6 +159,12 @@ def run_etsy_agent():
                 "summary": f"{processed} rows processed by Worker at "
                            f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
             })
+        # Trigger the Missing Data Advisor agent after each batch run
+        try:
+            call_gas_function("runMissingDataAdvisor")
+            log_action("Manager Agent", "Invoked", "Triggered after batch run", agent="Worker")
+        except Exception as e:
+            log_action("Manager Agent", "Error", f"Failed to trigger: {e}", agent="Worker")
         return result
 
 # ------------------------------- #
