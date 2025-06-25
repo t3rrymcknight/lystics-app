@@ -7,7 +7,7 @@ import openai
 # ------------------------------- #
 #  Google Apps Script Endpoints   #
 # ------------------------------- #
-GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbwtehfSyjgixOsOXxEG-vPdWHkOhXXCvNeYJsd9OYeqs4oHKqq_1Hk0I_PlTeeUn7F4/exec"
+GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbztPnEn7kU3z3S21uZQ6-FXkrxfHSxkr2_4CQIybbULubIcMIqyu6YV9WiIk7WjYVve/exec"
 LOG_FUNCTION        = "logAgentAction"
 GET_ROWS_FUNCTION   = "getRowsNeedingProcessing"
 MAX_ROWS_PER_RUN    = 20
