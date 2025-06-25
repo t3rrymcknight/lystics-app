@@ -85,7 +85,7 @@ def run_etsy_agent():
     "Describe Image": "processImagesWithOpenAI",
     "Add Mockups": "updateImagesFromMockupFolders",
     "Ready": "processListings",
-    "Upscale Image": "upscaleImageVariants",
+    "Upscale Image": "copyUpscaleImageAndStoreVariants",
     "Generate Mockup JSON": "generateMockupJson",
     "Upload Files": "uploadDigitalFiles",
     "Upload Images": "uploadImageAssets",
