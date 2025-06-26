@@ -2,12 +2,11 @@ import requests
 import datetime
 import os
 import json
-import openai
 
 # ------------------------------- #
 #  Google Apps Script Endpoints   #
 # ------------------------------- #
-GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbwWd61m5MgX9EXk1FCf5yobux1u-JPGx3pTxlDrDgIjkuOJh33dqHgcMHjroirmrkWy/exec"
+GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbxPFzs5AVCAqqEs3Xr4REe0GPZdcBmAoaZ5xCtGmvAdQ51FWNsU9cbZ7pnlsqJb1Nwz/exec"
 LOG_FUNCTION        = "logAgentAction"
 GET_ROWS_FUNCTION   = "getRowsNeedingProcessing"
 MAX_ROWS_PER_RUN    = 20
@@ -17,9 +16,6 @@ COOLDOWN_MINUTES    = 1
 #        Helper Functions         #
 # ------------------------------- #
 def call_gas_function(function_name, params=None, timeout=30):
-    """
-    Generic caller for GAS web-app functions.
-    """
     if params is None:
         params = {}
     url = f"{GAS_BASE_URL}?function={function_name}"
@@ -28,11 +24,9 @@ def call_gas_function(function_name, params=None, timeout=30):
         response = requests.post(url, json=params, timeout=timeout)
         response.raise_for_status()
         data = response.json()
-
-        # Every GAS doPost returns { success, result } or { success, error }
         if not data.get("success", False):
             raise Exception(f"{function_name} error: {data.get('error', 'Unknown error')}")
-        return data.get("result", {})     # unwrap the payload
+        return data.get("result", {})
     except requests.exceptions.RequestException as e:
         raise Exception(f"{function_name} failed: {str(e)}")
 
@@ -53,7 +47,6 @@ def log_action(action, outcome, notes, agent="Worker"):
 #           Main Runner           #
 # ------------------------------- #
 def run_etsy_agent():
-    # 1. Concurrency guard
     if call_gas_function("isWorkerActive").get("active"):
         log_action("Batch Skipped", "Worker already active", "")
         return {"status": "skipped", "message": "Worker already running"}
@@ -67,7 +60,6 @@ def run_etsy_agent():
     response     = None
 
     try:
-        # 2. Fetch rows
         response_json = call_gas_function(GET_ROWS_FUNCTION)
         print("🧪 Raw GAS Response:", json.dumps(response_json, indent=2))
 
@@ -80,22 +72,22 @@ def run_etsy_agent():
             grouped_rows[str(row.get("Status") or "").strip()].append(row)
 
         fn_map = {
-    "Download Image": "downloadImagesToDrive",
-    "Create Thumbnail": "copyResizeImageAndStoreUrl",
-    "Describe Image": "processImagesWithOpenAI",
-    "Add Mockups": "updateImagesFromMockupFolders",
-    "Upscale Image": "copyUpscaleImageAndStoreVariants",
-    "Generate Mockup JSON": "generateMockupJson",
-    "Upload Files": "uploadDigitalFiles",
-    "Upload Images": "uploadImageAssets",
-    "Vectorize": "vectorizeSourceSvg",
-    "Create Description": "findReplaceInDescription",
-    "Create Folder": "processCreateFolders",
-    "Rename Files": "updateFileNamesWithImageName",
-    "Move Files": "moveFilesAndImagesToFolder",
-    "Generate Mockups": "generateMockupsFromDrive",            
-    "Create JSON": "buildMockupJsonFromFolderStructure",
-    "Create PDF": "processCreatePDF"
+            "Download Image": "downloadImagesToDrive",
+            "Create Thumbnail": "copyResizeImageAndStoreUrl",
+            "Describe Image": "processImagesWithOpenAI",
+            "Add Mockups": "updateImagesFromMockupFolders",
+            "Upscale Image": "copyUpscaleImageAndStoreVariants",
+            "Generate Mockup JSON": "generateMockupJson",
+            "Upload Files": "uploadDigitalFiles",
+            "Upload Images": "uploadImageAssets",
+            "Vectorize": "vectorizeSourceSvg",
+            "Create Description": "findReplaceInDescription",
+            "Create Folder": "processCreateFolders",
+            "Rename Files": "updateFileNamesWithImageName",
+            "Move Files": "moveFilesAndImagesToFolder",
+            "Generate Mockups": "generateMockupsFromDrive",
+            "Create JSON": "buildMockupJsonFromFolderStructure",
+            "Create PDF": "processCreatePDF"
         }
 
         for status, group in grouped_rows.items():
@@ -149,8 +141,8 @@ def run_etsy_agent():
         log_action("Batch Error", "Critical Failure", str(e), agent="Worker")
 
     finally:
-        # 4. Tear-down
         call_gas_function("markWorkerInactive")
+
         if any("❌" in log or "error" in log.lower() or "🔥" in log for log in summary_logs):
             call_gas_function("sendAgentSummaryEmail", {
                 "status": result.get("status"),
@@ -158,12 +150,19 @@ def run_etsy_agent():
                 "summary": f"{processed} rows processed by Worker at "
                            f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
             })
-        # Trigger the Missing Data Advisor agent after each batch run
+
         try:
             call_gas_function("runMissingDataAdvisor")
             log_action("Manager Agent", "Invoked", "Triggered after batch run", agent="Worker")
         except Exception as e:
-            log_action("Manager Agent", "Error", f"Failed to trigger: {e}", agent="Worker")
+            log_action("Manager Agent", "Error", f"Failed to trigger runMissingDataAdvisor: {e}", agent="Worker")
+
+        try:
+            call_gas_function("runManagerPipeline")
+            log_action("Manager Agent", "Invoked", "Triggered runManagerPipeline after batch", agent="Worker")
+        except Exception as e:
+            log_action("Manager Agent", "Error", f"Failed to trigger runManagerPipeline: {e}", agent="Worker")
+
         return result
 
 # ------------------------------- #
@@ -184,87 +183,40 @@ def manager_handle_issue(row, error_msg):
     except Exception as log_err:
         print(f"⚠️ Failed to log to Thinking tab: {log_err}")
 
-    suggestion = suggest_next_action_for_row(row, error_msg)
-
     try:
         error_count = call_gas_function("getProgressErrorCount", {"row": row_number}).get("count", 0)
-    except Exception as e:
+    except Exception:
         error_count = 0
 
-    if error_count >= 3:
-        suggestion["action"] = "reset_status"
-        suggestion["new_status"] = row.get("Status")  # fallback to current
-        suggestion["reason"] = "Auto-reset after 3 failed attempts"
+    reason = f"Auto-reset after {error_count} failed attempts" if error_count >= 3 else error_msg
 
     try:
-        call_gas_function("updateRowNotes", {"row": row_number, "notes": suggestion.get("reason")})
+        call_gas_function("updateRowNotes", {"row": row_number, "notes": reason})
     except Exception as e:
         print(f"⚠️ Failed to update row notes: {e}")
 
-    if suggestion.get("action") == "reset_status":
+    if error_count >= 3:
         try:
             call_gas_function("updateRowStatus", {
-                "row":        row_number,
-                "new_status": suggestion["new_status"]
+                "row": row_number,
+                "new_status": row.get("Status")
             })
             call_gas_function("clearThinkingTab")
-            log_action(f"Row {row_number}", "Resolved", suggestion["reason"], agent="Manager")
+            log_action(f"Row {row_number}", "Resolved", reason, agent="Manager")
             return
         except Exception as update_err:
             error_msg = f"Failed to reset status: {update_err}"
 
     call_gas_function("clearThinkingTab")
-    log_action(f"Row {row_number}", "Escalated",
-               suggestion.get("reason") or error_msg,
-               agent="Manager")
+    log_action(f"Row {row_number}", "Escalated", reason, agent="Manager")
 
     try:
         call_gas_function("sendEscalationEmail", {
-            "row":    row_number,
-            "sku":    row.get("Title") or "Unknown",
+            "row": row_number,
+            "sku": row.get("Title") or "Unknown",
             "status": row.get("Status"),
-            "error":  error_msg,
-            "suggestion": suggestion.get("reason")
+            "error": error_msg,
+            "suggestion": reason
         })
     except Exception as e:
         print(f"⚠️ Failed to send escalation email: {e}")
-
-# ------------------------------- #
-#     LLM-Assisted Suggestions    #
-# ------------------------------- #
-def suggest_next_action_for_row(row, error_msg):
-    """
-    Ask the LLM how to resolve a failed row.  Returns a dict like:
-    { action, new_status?, reason }
-    """
-    try:
-        api_key_resp = call_gas_function("getOpenAIKey")
-        if not api_key_resp.get("success") or not api_key_resp.get("key"):
-            raise Exception("❌ Failed to retrieve OpenAI key from getOpenAIKey()")
-        api_key = api_key_resp.get("key")
-        openai.api_key = api_key
-
-        context = (
-            f"Row data: {json.dumps(row)}\n"
-            f"Error: {error_msg}\n\n"
-            "You are a helpful agent managing an Etsy listing pipeline. "
-            "What is the next action I should take to resolve this? "
-            "Reply in JSON with fields: action, new_status (if any), reason."
-        )
-
-        response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are an Etsy product operations agent."},
-                {"role": "user",   "content": context}
-            ],
-            temperature=0.3
-        )
-        content = response.choices[0].message["content"]
-        return json.loads(content)
-
-    except Exception as e:
-        return {
-            "action": "escalate",
-            "reason": f"LLM failed or returned unparseable output: {e}"
-        }
