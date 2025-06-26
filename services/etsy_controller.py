@@ -7,7 +7,7 @@ import openai
 # ------------------------------- #
 #  Google Apps Script Endpoints   #
 # ------------------------------- #
-GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbxWHKdsz6ujrfwqzuz9QdfQ0T2SUzQ3xhWiBxpmf7BSKJMjFDh503hOql6c86tE9Xwp/exec"
+GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbwWd61m5MgX9EXk1FCf5yobux1u-JPGx3pTxlDrDgIjkuOJh33dqHgcMHjroirmrkWy/exec"
 LOG_FUNCTION        = "logAgentAction"
 GET_ROWS_FUNCTION   = "getRowsNeedingProcessing"
 MAX_ROWS_PER_RUN    = 20
@@ -84,7 +84,6 @@ def run_etsy_agent():
     "Create Thumbnail": "copyResizeImageAndStoreUrl",
     "Describe Image": "processImagesWithOpenAI",
     "Add Mockups": "updateImagesFromMockupFolders",
-    "Ready": "processListings",
     "Upscale Image": "copyUpscaleImageAndStoreVariants",
     "Generate Mockup JSON": "generateMockupJson",
     "Upload Files": "uploadDigitalFiles",
@@ -94,7 +93,7 @@ def run_etsy_agent():
     "Create Folder": "processCreateFolders",
     "Rename Files": "updateFileNamesWithImageName",
     "Move Files": "moveFilesAndImagesToFolder",
-    "Generate": "generateMockupsFromDrive",            
+    "Generate Mockups": "generateMockupsFromDrive",            
     "Create JSON": "buildMockupJsonFromFolderStructure",
     "Create PDF": "processCreatePDF"
         }
