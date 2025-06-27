@@ -1,3 +1,4 @@
+from agents.queue_gas_call import queue_gas_call
 # routes/etsy_agent.py
 from flask import Blueprint, jsonify, request
 from api.api_gateway import run_etsy_agent
