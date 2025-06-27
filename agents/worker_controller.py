@@ -1,6 +1,6 @@
 # routes/etsy_agent.py
 from flask import Blueprint, jsonify, request
-from services.etsy_controller import run_etsy_agent
+from api.api_gateway import run_etsy_agent
 
 etsy_bp = Blueprint('etsy_bp', __name__)
 

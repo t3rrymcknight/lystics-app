@@ -170,8 +170,8 @@ from routes.mockups import mockup_bp
 app.register_blueprint(mockup_bp)
 
 # === E-AGENT ROUTE REGISTRATION ===
-from routes.etsy_agent import etsy_bp
-app.register_blueprint(etsy_bp)
+from agents.worker_controller import etsy_bp
+app.register_blueprint(etsy_bp, url_prefix='/agent')
 
 # === Launch ===
 if __name__ == '__main__':

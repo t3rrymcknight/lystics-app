@@ -139,9 +139,8 @@ def run_etsy_agent():
         summary_logs.append(f"🔥 Critical error: {e}")
         result = {"status": "error", "message": str(e)}
         log_action("Batch Error", "Critical Failure", str(e), agent="Worker")
-
     finally:
-        call_gas_function("markWorkerInactive")
+        handle_post_run_summary(summary_logs, result)
 
         if any("❌" in log or "error" in log.lower() or "🔥" in log for log in summary_logs):
             call_gas_function("sendAgentSummaryEmail", {
