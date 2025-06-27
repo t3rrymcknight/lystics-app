@@ -1,3 +1,6 @@
+from api.price_check import price_check_bp
+from services.resize_json_service import resizeJSON
+from services.upscaler import upscaleImage
 from flask import Flask, request, jsonify
 from PIL import Image
 import io
@@ -13,6 +16,7 @@ import re
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
+app.register_blueprint(price_check_bp)
 
 # === Health Check Route ===
 @app.route("/healthz", methods=["GET"])
