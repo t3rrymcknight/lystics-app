@@ -1,0 +1,3 @@
+class LysticsJob:
+    def __init__(self, row_id, sku, job_id, status, workflow_type, assigned_worker):
+        ...
