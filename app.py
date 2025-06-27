@@ -136,10 +136,6 @@ def price_check():
         "found_prices": prices
     }), 200
 
-def scrape_google_shopping(keyword):
-    API_TOKEN = os.getenv("CYlpaaQZbbH1k-5wzEAq5Q")  # Replace with correct ENV var
-    base_url = "https://api.crawlbase.com/"
-    query_url = f"https://www.google.com/search?q={keyword}&tbm=shop"
 
     params = {
         "token": API_TOKEN,
@@ -181,3 +177,9 @@ app.register_blueprint(etsy_bp, url_prefix='/agent')
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
+
+from services.resize_json_service import resizeJSON
+app.add_url_rule('/resizeJson', view_func=resizeJSON, methods=['POST'])
+
+from services.upscaler import upscaleImage
+app.add_url_rule('/upscaleOne', view_func=upscaleImage, methods=['POST'])
