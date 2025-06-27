@@ -1,38 +1,38 @@
-def assign_unclaimed_jobs(worker_pool):
+from agents.workflow_config import workflow_steps
+
+def diagnose_row(row):
     """
-    Assigns unclaimed rows to available workers using round-robin strategy.
+    Returns a dictionary explaining the row's current issues or progress blockers.
     """
-    from api.api_gateway import call_gas_function, log_action
-    import datetime
+    result = {
+        "row": row.get("Row"),
+        "status": row.get("Status"),
+        "workflow_type": row.get("Workflow Type"),
+        "bot_status": row.get("Bot Status"),
+        "last_attempted": row.get("Last Attempted"),
+        "issues": [],
+        "likely_cause": ""
+    }
 
-    try:
-        result = call_gas_function("getRowsNeedingProcessing", {
-            "job_id": "", "assigned_worker": "", "limit": 50
-        })
-        rows = result.get("rows", [])
-    except Exception as e:
-        log_action("Manager", "Error", f"Failed to fetch unclaimed rows: {e}")
-        return
+    steps_required = workflow_steps.get(result["workflow_type"], [])
+    current_status = result["status"]
 
-    assignments = {}
-    worker_index = 0
+    if not steps_required:
+        result["issues"].append("Unknown workflow type")
+        result["likely_cause"] = "Workflow type not defined"
+        return result
 
-    for row in rows:
-        row_id = row.get("Row")
-        sku = row.get("SKU") or row.get("Title")
-        assigned_worker = worker_pool[worker_index % len(worker_pool)]
-        job_id = f"{assigned_worker}-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}-{row_id}"
+    if current_status not in steps_required:
+        result["issues"].append("Status not valid for this workflow type")
+        result["likely_cause"] = "Incorrect or outdated status"
+        return result
 
-        try:
-            call_gas_function("updateRowAssignments", {
-                "row": row_id,
-                "job_id": job_id,
-                "assigned_worker": assigned_worker
-            })
-            assignments[row_id] = assigned_worker
-            log_action("Manager", "Assignment", f"Assigned row {row_id} to {assigned_worker} (Job: {job_id})")
-            worker_index += 1
-        except Exception as e:
-            log_action("Manager", "Error", f"Failed to assign row {row_id}: {e}")
+    # Check if essential fields are missing
+    if current_status == "Create PDF" and not row.get("Drive URL"):
+        result["issues"].append("Missing Drive URL for source image")
+        result["likely_cause"] = "Cannot create PDF without image"
+    elif current_status == "Upload Files" and not row.get("Mockups Folder ID") and not row.get("Folder ID"):
+        result["issues"].append("Missing folder ID")
+        result["likely_cause"] = "No output folder to upload to"
 
-    return assignments
+    return result
