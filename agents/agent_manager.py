@@ -165,3 +165,111 @@ def assign_unclaimed_jobs(worker_pool, max_rows_per_worker=50):
             log_action("Manager", "Error", f"Failed to assign row {row_id}: {e}")
 
     return assignments
+
+def runManagerPipeline():
+    from api.api_gateway import call_gas_function, log_action
+    from agents.agent_manager import diagnose_row
+    import datetime
+
+    try:
+        result = call_gas_function("getRowsNeedingProcessing", {})
+        rows = result.get("rows", [])
+    except Exception as e:
+        log_action("Manager", "Error", f"Failed to load rows for pipeline: {e}")
+        return
+
+    now = datetime.datetime.utcnow()
+    for row in rows:
+        row_id = row.get("Row")
+        bot_status = row.get("Bot Status", "")
+        last_attempted = row.get("Last Attempted")
+        status = row.get("Status")
+
+        # Parse ISO timestamp
+        try:
+            last_dt = datetime.datetime.fromisoformat(last_attempted)
+        except Exception:
+            last_dt = None
+
+        minutes_old = (now - last_dt).total_seconds() / 60 if last_dt else None
+        stale = bot_status == "Processing" and minutes_old and minutes_old > 15
+
+        if stale:
+            log_action(f"Row {row_id}", "Escalated", f"Stuck for {int(minutes_old)} mins", agent="Manager")
+            call_gas_function("updateRowStatus", {
+                "row": row_id,
+                "new_status": status
+            })
+            call_gas_function("updateRowNotes", {
+                "row": row_id,
+                "notes": f"⚠️ Auto-escalated after {int(minutes_old)} min idle"
+            })
+            call_gas_function("sendEscalationEmail", {
+                "row": row_id,
+                "sku": row.get("SKU", "Unknown"),
+                "status": status,
+                "error": "Worker stuck",
+                "suggestion": "Supervisor intervention needed"
+            })
+        else:
+            diagnosis = diagnose_row(row)
+
+        # Log task priority if available
+        from agents.workflow_config import workflow_steps_with_priority
+        priority_step = next((s for s in workflow_steps_with_priority.get(workflow_type, []) if s['step'] == status), None)
+        if priority_step and priority_step['priority'] == 'high':
+            log_action(f"Row {row_id}", "High Priority", f"Step: {status}", agent="Manager")
+
+        # Step index enforcement
+        try:
+            index = int(call_gas_function("getStepIndex", {"row": row_id}).get("step", 0))
+            expected = determine_next_status(workflow_type, status)
+            current_steps = workflow_steps.get(workflow_type, [])
+            if index < len(current_steps):
+                expected_status = current_steps[index]
+                if status != expected_status:
+                    log_action(f"Row {row_id}", "Corrected", f"Reset to valid step: {expected_status}")
+                    call_gas_function("updateRowStatus", {"row": row_id, "new_status": expected_status})
+                    call_gas_function("updateStepIndex", {"row": row_id, "index": index})
+        except Exception as e:
+            log_action(f"Row {row_id}", "Step Index Check Failed", str(e))
+        errors = getProgressErrorCount(row_id)
+        if errors >= 3:
+            log_action(f"Row {row_id}", "Escalated", f"{status} failed 3 times", agent="Manager")
+            call_gas_function("updateRowStatus", {"row": row_id, "new_status": status})
+            call_gas_function("sendEscalationEmail", {
+                "row": row_id,
+                "sku": row.get("SKU", "Unknown"),
+                "status": status,
+                "error": "Too many failures",
+                "suggestion": "Supervisor intervention required"
+            })
+        else:
+            next_status = determine_next_status(workflow_type, status)
+            if next_status:
+                call_gas_function("updateRowStatus", {"row": row_id, "new_status": next_status})
+                log_action(f"Row {row_id}", "Auto-Advanced", f"Moved to next step: {next_status}")
+            else:
+                log_action(f"Row {row_id}", "Stuck", f"No next step found", agent="Manager")
+            if diagnosis["issues"]:
+                log_action(f"Row {row_id}", "Diagnosis", diagnosis["likely_cause"], agent="Manager")
+
+    log_action("Manager", "Pipeline", "Completed runManagerPipeline")
+
+
+
+def determine_next_status(workflow_type, current_status):
+    from agents.workflow_config import workflow_steps
+    steps = workflow_steps.get(workflow_type, [])
+    if current_status in steps:
+        i = steps.index(current_status)
+        return steps[i + 1] if i + 1 < len(steps) else None
+    return steps[0] if steps else None
+
+def incrementProgressErrorCount(row_number):
+    from api.api_gateway import call_gas_function
+    call_gas_function("incrementProgressErrorCount", {"row": row_number})
+
+def getProgressErrorCount(row_number):
+    from api.api_gateway import call_gas_function
+    return call_gas_function("getProgressErrorCount", {"row": row_number}).get("count", 0)
