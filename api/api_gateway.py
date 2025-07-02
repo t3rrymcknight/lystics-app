@@ -6,7 +6,7 @@ import json
 # ------------------------------- #
 #  Google Apps Script Endpoints   #
 # ------------------------------- #
-GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbxNwLnUaxcJ-uwZc003v_wa3ctjJwYT4HX7vyxcnI2LlU5zMP3lJcx3ERqaeLCi2zOD/exec"
+GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbwVSwYpX_u0XTE5Fhnmo-LTJ6TkvPdl3e8KZDvxwdvaOeIbpA3JDxCylu_FiBcANluq/exec"
 LOG_FUNCTION        = "logAgentAction"
 GET_ROWS_FUNCTION   = "getRowsNeedingProcessing"
 MAX_ROWS_PER_RUN    = 20

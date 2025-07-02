@@ -15,14 +15,13 @@ def run_agent():
 
 @etsy_bp.route("/runManagerPipeline", methods=["POST"])
 def run_manager_pipeline():
-    from api.api_gateway import call_gas_function, log_action
-    from agents.agent_manager import assign_unclaimed_jobs
+    from agents.agent_manager import assign_unclaimed_jobs, runManagerPipeline, log_action
 
     try:
         assigned = assign_unclaimed_jobs(["worker1", "worker2"])
-        response = call_gas_function("runManagerPipeline")
-        log_action("Manager Trigger", "Success", f"Assigned {len(assigned)} jobs + ran GAS pipeline", agent="Manager")
-        return jsonify({"status": "ok", "assigned": assigned, "response": response})
+        runManagerPipeline()
+        log_action("Manager Trigger", "Success", f"Assigned {len(assigned)} jobs + ran Python pipeline", agent="Manager")
+        return jsonify({"status": "ok", "assigned": assigned}), 200
     except Exception as e:
         log_action("Manager Trigger", "Error", str(e))
         return jsonify({"status": "error", "message": str(e)}), 500
