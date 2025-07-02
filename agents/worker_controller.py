@@ -15,7 +15,8 @@ def run_agent():
 
 @etsy_bp.route("/runManagerPipeline", methods=["POST"])
 def run_manager_pipeline():
-    from agents.agent_manager import assign_unclaimed_jobs, runManagerPipeline, log_action
+    from agents.agent_manager import assign_unclaimed_jobs, runManagerPipeline
+    from api.api_gateway import log_action
 
     try:
         assigned = assign_unclaimed_jobs(["worker1", "worker2"])
