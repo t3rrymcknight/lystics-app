@@ -41,6 +41,7 @@ def assign_unclaimed_jobs(worker_pool):
             "job_id": "", "assigned_worker": "", "limit": 50
         })
         rows = result.get("rows", [])
+        log_action("Manager", "Debug", f"GAS returned {len(rows)} rows: {[r.get('Row') for r in rows]}")
     except Exception as e:
         log_action("Manager", "Error", f"Failed to fetch unclaimed rows: {e}")
         return
