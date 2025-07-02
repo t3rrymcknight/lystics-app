@@ -14,7 +14,7 @@ def queue_gas_call(function_name, call_fn, cooldown_seconds=20, force=False):
     _last_call_time[function_name] = now
 
     try:
-        return call_fn()
+        return call_fn(function_name)
     except Exception as e:
         print(f"❌ Error calling {function_name}: {e}")
         return {"status": "error", "error": str(e)}
