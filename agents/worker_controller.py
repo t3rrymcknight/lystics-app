@@ -21,7 +21,7 @@ def run_manager_pipeline():
     try:
         assigned = assign_unclaimed_jobs(["worker1", "worker2"])
         response = call_gas_function("runManagerPipeline")
-        log_action("Manager Trigger", "Success", f"Assigned {len(assigned)} jobs + ran GAS pipeline")
+        log_action("Manager Trigger", "Success", f"Assigned {len(assigned)} jobs + ran GAS pipeline", agent="Manager")
         return jsonify({"status": "ok", "assigned": assigned, "response": response})
     except Exception as e:
         log_action("Manager Trigger", "Error", str(e))
