@@ -29,41 +29,46 @@ def handle_post_run_summary(summary_logs, result):
         log_action("Manager Agent", "Error", f"Failed to trigger runManagerPipeline: {e}", agent="Worker")
 
 
-def assign_unclaimed_jobs(worker_pool):
-    """
-    Assigns unclaimed rows to available workers using round-robin strategy.
-    """
+def assign_unclaimed_jobs(worker_pool, max_rows_per_worker=50):
     from api.api_gateway import call_gas_function, log_action
     import datetime
 
     try:
         result = call_gas_function("getRowsNeedingProcessing", {
-            "job_id": "", "assigned_worker": "", "limit": 50
+            "job_id": "", "assigned_worker": "", "limit": 200
         })
+        log_action("Manager", "Debug", f"Raw GAS rows: {result}")
         rows = result.get("rows", [])
-        log_action("Manager", "Debug", f"GAS returned {len(rows)} rows: {[r.get('Row') for r in rows]}")
+        log_action("Manager", "Debug", f"Filtered to {len(rows)} unclaimed rows")
     except Exception as e:
         log_action("Manager", "Error", f"Failed to fetch unclaimed rows: {e}")
-        return
+        return {}
 
+    load_map = getWorkerLoadMap()
     assignments = {}
-    worker_index = 0
 
     for row in rows:
         row_id = row.get("Row")
         sku = row.get("SKU") or row.get("Title")
-        assigned_worker = worker_pool[worker_index % len(worker_pool)]
-        job_id = f"{assigned_worker}-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}-{row_id}"
+        least_loaded = sorted(worker_pool, key=lambda w: load_map.get(w, 0))[0]
+
+        log_action("Manager", "Debug", f"Evaluating row {row_id} — least-loaded: {least_loaded} ({load_map.get(least_loaded, 0)} jobs)")
+
+        if load_map.get(least_loaded, 0) >= max_rows_per_worker:
+            log_action("Manager", "Skip", f"Skipped row {row_id} — worker {least_loaded} at cap", agent="Manager")
+            continue
+
+        job_id = f"{least_loaded}-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}-{row_id}"
 
         try:
             call_gas_function("updateRowAssignments", {
                 "row": row_id,
                 "job_id": job_id,
-                "assigned_worker": assigned_worker
+                "assigned_worker": least_loaded
             })
-            assignments[row_id] = assigned_worker
-            log_action("Manager", "Assignment", f"Assigned row {row_id} to {assigned_worker} (Job: {job_id})")
-            worker_index += 1
+            assignments[row_id] = least_loaded
+            log_action("Manager", "Assignment", f"Assigned row {row_id} to {least_loaded} (Job: {job_id})")
+            load_map[least_loaded] = load_map.get(least_loaded, 0) + 1
         except Exception as e:
             log_action("Manager", "Error", f"Failed to assign row {row_id}: {e}")
 
