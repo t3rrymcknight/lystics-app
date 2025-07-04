@@ -20,6 +20,8 @@ def call_gas_function(function_name, params=None, timeout=30):
         params = {}
     url = f"{GAS_BASE_URL}?function={function_name}"
 
+    payload = {**params, "function": function_name}
+    
     try:
         response = requests.post(url, json=params, timeout=timeout)
         response.raise_for_status()
