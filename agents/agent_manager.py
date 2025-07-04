@@ -1,6 +1,3 @@
-
-
-
 def handle_post_run_summary(summary_logs, result):
     import datetime
     from api.api_gateway import call_gas_function, log_action
@@ -142,7 +139,11 @@ def assign_unclaimed_jobs(worker_pool, max_rows_per_worker=50):
         result = call_gas_function("getRowsNeedingProcessing", {
             "job_id": "", "assigned_worker": "", "limit": 200
         })
+        print("Raw GAS response:", result)
+        log_action("Manager", "Debug", f"Raw GAS response: {result}")
+        log_action("Manager", "Debug", f"Raw GAS rows: {result}")
         rows = result.get("rows", [])
+        log_action("Manager", "Debug", f"Filtered to {len(rows)} unclaimed rows")
     except Exception as e:
         log_action("Manager", "Error", f"Failed to fetch unclaimed rows: {e}")
         return {}
@@ -155,7 +156,10 @@ def assign_unclaimed_jobs(worker_pool, max_rows_per_worker=50):
         sku = row.get("SKU") or row.get("Title")
         least_loaded = sorted(worker_pool, key=lambda w: load_map.get(w, 0))[0]
 
+        log_action("Manager", "Debug", f"Evaluating row {row_id} — least-loaded: {least_loaded} ({load_map.get(least_loaded, 0)} jobs)")
+
         if load_map.get(least_loaded, 0) >= max_rows_per_worker:
+            log_action("Manager", "Skip", f"Skipped row {row_id} — worker {least_loaded} at cap", agent="Manager")
             continue
 
         job_id = f"{least_loaded}-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}-{row_id}"
@@ -173,6 +177,7 @@ def assign_unclaimed_jobs(worker_pool, max_rows_per_worker=50):
             log_action("Manager", "Error", f"Failed to assign row {row_id}: {e}")
 
     return assignments
+
 
 def runManagerPipeline():
     from api.api_gateway import call_gas_function, log_action
