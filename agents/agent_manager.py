@@ -37,6 +37,8 @@ def assign_unclaimed_jobs(worker_pool, max_rows_per_worker=50):
         result = call_gas_function("getRowsNeedingProcessing", {
             "job_id": "", "assigned_worker": "", "limit": 200
         })
+        print("Raw GAS response:", result)
+log_action("Manager", "Debug", f"Raw GAS response: {result}")
         log_action("Manager", "Debug", f"Raw GAS rows: {result}")
         rows = result.get("rows", [])
         log_action("Manager", "Debug", f"Filtered to {len(rows)} unclaimed rows")
