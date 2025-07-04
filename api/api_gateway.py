@@ -20,16 +20,31 @@ def call_gas_function(function_name, params=None, timeout=30):
         params = {}
     url = f"{GAS_BASE_URL}?function={function_name}"
 
-    payload = {**params, "function": function_name}
-    
+    print("\n========== GAS CALL DEBUG ==========")
+    print(f"-> Function: {function_name}")
+    print(f"-> URL: {url}")
+    print(f"-> Params: {json.dumps(params)}")
+
     try:
         response = requests.post(url, json=params, timeout=timeout)
+        print(f"-> Status code: {response.status_code}")
+        print(f"-> Raw response: {response.text}")
+
+        try:
+            data = response.json()
+            print("-> Decoded JSON:", json.dumps(data, indent=2))
+        except Exception as e:
+            print(f"-> JSON decode error: {e}")
+            data = {}
+
         response.raise_for_status()
-        data = response.json()
+
         if not data.get("success", False):
             raise Exception(f"{function_name} error: {data.get('error', 'Unknown error')}")
-        return data.get("result", {})
+        # Most functions return {"success": True, ...}; some wrap their results
+        return data.get("result", data)  # Prefer .result, else return full object
     except requests.exceptions.RequestException as e:
+        print(f"❌ {function_name} failed: {str(e)}")
         raise Exception(f"{function_name} failed: {str(e)}")
 
 def log_action(action, outcome, notes, agent="Worker"):
