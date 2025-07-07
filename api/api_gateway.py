@@ -1,3 +1,9 @@
+# --- top of file ----------------------------------------------------------
+from __future__ import annotations            #   ← NEW
+from typing import Optional                   #   ← NEW
+import requests, datetime, json, os
+# -------------------------------------------------------------------------
+
 import requests
 import datetime
 import json
@@ -20,42 +26,36 @@ COOLDOWN_MINUTES  = 1
 #        Helper Functions         #
 # ------------------------------- #
 
-def call_gas_function(function_name: str, params: dict | None = None, timeout: int = 30):
-    """POST JSON → Apps‑Script web‑app and return decoded payload.
+# PATCH ⤵️  remove the 3.10 PEP-604 syntax
+def call_gas_function(function_name: str,
+                      params: Optional[dict] = None,
+                      timeout: int = 30):     #   ← CHANGED
 
-    The body always contains a `function` key so `doPost` can route, even when
-    additional params are empty/None.
-    """
-    payload: dict = {"function": function_name}
+    body = {"function": function_name}
     if params:
-        payload.update(params)
+        body.update(params)
+
+    url = os.getenv("GAS_BASE_URL", "").rstrip("/")  # prefer env-var
+    if not url:
+        raise RuntimeError("GAS_BASE_URL not set")
 
     print("\n========== GAS CALL DEBUG ==========")
-    print("-> Function:", function_name)
-    print("-> URL:", GAS_BASE_URL)
-    print("-> Payload:", json.dumps(payload))
+    print(f"POST → {url}")
+    print("Body :", json.dumps(body, indent=2))
+
+    resp = requests.post(url, json=body, timeout=timeout)
+    print("Status:", resp.status_code)
+    print("Raw  :", resp.text[:500])
 
     try:
-        resp = requests.post(GAS_BASE_URL, json=payload, timeout=timeout)
-        print("-> Status code:", resp.status_code)
-        print("-> Raw response:", resp.text)
+        data = resp.json()
+    except Exception as err:
+        raise RuntimeError(f"{function_name} returned non-JSON: {err}") from err
 
-        # raise for HTTP‑level failures first
-        resp.raise_for_status()
+    if not data.get("success"):
+        raise RuntimeError(f"{function_name} error: {data.get('error','unknown')}")
 
-        try:
-            data = resp.json()
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(f"{function_name} returned non‑JSON: {resp.text}") from exc
-
-        print("-> Decoded JSON:", json.dumps(data, indent=2))
-
-        if not data.get("success", False):
-            raise RuntimeError(f"{function_name} error: {data.get('error', 'Unknown error')}")
-
-        return data.get("result", data)  # Some endpoints wrap in .result
-    except requests.RequestException as exc:
-        raise RuntimeError(f"{function_name} HTTP error: {exc}") from exc
+    return data.get("result", data)
 
 
 def log_action(action: str, outcome: str, notes: str, *, agent: str = "Worker") -> None:
