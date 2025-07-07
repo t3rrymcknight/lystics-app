@@ -16,17 +16,21 @@ COOLDOWN_MINUTES    = 1
 #        Helper Functions         #
 # ------------------------------- #
 def call_gas_function(function_name, params=None, timeout=30):
-    if params is None:
-        params = {}
     url = f"{GAS_BASE_URL}?function={function_name}"
 
     print("\n========== GAS CALL DEBUG ==========")
     print(f"-> Function: {function_name}")
     print(f"-> URL: {url}")
-    print(f"-> Params: {json.dumps(params)}")
+    print(f"-> Params: {json.dumps(params) if params else '{}'}")
 
     try:
-        response = requests.post(url, json=params, timeout=timeout)
+        if not params or (isinstance(params, dict) and not params):
+            # No params: use GET (like Apps Script UI/test)
+            response = requests.get(url, timeout=timeout)
+        else:
+            # With params: use POST
+            response = requests.post(url, json=params, timeout=timeout)
+
         print(f"-> Status code: {response.status_code}")
         print(f"-> Raw response: {response.text}")
 
