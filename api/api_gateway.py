@@ -9,7 +9,7 @@ from collections import defaultdict
 # ------------------------------- #
 GAS_BASE_URL      = (
     os.getenv("LYSTICS_GAS_BASE_URL")
-    or "https://script.google.com/macros/s/AKfycbw4Tk-Y6LXOzf5bZm8o0Jlcz9p0nJmraiCU8e6_2TajpDYm52VK4hCYIVTRzwjrD_6Q/exec"
+    or "https://script.google.com/macros/s/AKfycbzLXrJ-DTfLF3MD1aPUBTk1na3kcDfZ5sREppGIuRot500eqRM_7S72kpjZzNl2vLnq/exec"
 )
 LOG_FUNCTION      = "logAgentAction"
 GET_ROWS_FUNCTION = "getRowsNeedingProcessing"
