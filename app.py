@@ -37,7 +37,6 @@ app.register_blueprint(etsy_bp, url_prefix='/agent')
 app.add_url_rule('/resizeJson', view_func=resizeJSON, methods=['POST'])
 app.add_url_rule('/upscaleOne', view_func=upscaleImage, methods=['POST'])
 
-
 # === Launch ===
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
