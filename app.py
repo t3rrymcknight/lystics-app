@@ -37,17 +37,6 @@ app.register_blueprint(etsy_bp, url_prefix='/agent')
 app.add_url_rule('/resizeJson', view_func=resizeJSON, methods=['POST'])
 app.add_url_rule('/upscaleOne', view_func=upscaleImage, methods=['POST'])
 
-from flask import Flask, jsonify
-from agent_manager import run_batch_rows
-
-@app.route('/run_batch', methods=['POST'])
-def trigger_batch_run():
-    try:
-        result = run_batch_rows()
-        return jsonify({"success": True, "result": result}), 200
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
 
 # === Launch ===
 if __name__ == '__main__':
