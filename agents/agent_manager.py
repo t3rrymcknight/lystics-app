@@ -2,6 +2,7 @@ import datetime
 from api.api_gateway import call_gas_function, log_action
 from agents.workflow_config import workflow_steps
 from agents.task_map import fn_map
+from agents.queue_gas_call import queue_gas_call
 
 def assign_unclaimed_jobs(worker_pool, max_rows_per_worker=50):
     """
@@ -50,7 +51,7 @@ def assign_unclaimed_jobs(worker_pool, max_rows_per_worker=50):
 
 def run_worker_on_assigned_jobs(worker_id):
     """
-    Fetches and executes all tasks assigned to a specific worker.
+    Fetches and executes all tasks assigned to a specific worker using a queue.
     """
     log_action(f"Worker {worker_id}", "Start Run", "Fetching assigned jobs.", agent=worker_id)
     try:
@@ -75,8 +76,21 @@ def run_worker_on_assigned_jobs(worker_id):
         try:
             log_action(f"Row {row_id}", "Processing", f"Executing task: {status}", agent=worker_id)
             call_gas_function("updateRowStatus", {"row": row_id, "new_status": f"Processing: {status}"})
-            call_gas_function(task_function_name, {"row": row_id})
             
+            # Use the queue to call the main task function to avoid rate-limiting issues
+            q_result = queue_gas_call(
+                task_function_name,
+                lambda _: call_gas_function(task_function_name, {"row": row_id})
+            )
+
+            if q_result.get("status") == "skipped":
+                log_action(f"Row {row_id}", "Skipped", f"Task '{status}' skipped due to cooldown.", agent=worker_id)
+                call_gas_function("updateRowStatus", {"row": row_id, "new_status": status}) # Revert status
+                continue
+
+            if q_result.get("status") == "error":
+                raise Exception(q_result.get("error", "Unknown error from queue"))
+
             next_status = determine_next_status(row.get("Workflow Type"), status)
             final_status = next_status if next_status else "Completed"
             
