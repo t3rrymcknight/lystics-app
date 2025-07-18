@@ -1,4 +1,5 @@
 import datetime
+import json
 from api.api_gateway import call_gas_function, log_action
 from agents.workflow_config import workflow_steps
 from agents.task_map import fn_map
@@ -7,7 +8,6 @@ from agents.queue_gas_call import queue_gas_call
 def assign_unclaimed_jobs(unassigned_rows, worker_pool, load_map, max_rows_per_worker=50):
     """
     Assigns jobs from a provided list of unassigned rows.
-    This no longer fetches its own data, making it much faster.
     """
     assignments = {}
     log_action("Manager", "Assignment", f"Attempting to assign {len(unassigned_rows)} unclaimed jobs.", agent="Manager")
@@ -17,7 +17,7 @@ def assign_unclaimed_jobs(unassigned_rows, worker_pool, load_map, max_rows_per_w
         least_loaded_worker = sorted(worker_pool, key=lambda w: load_map.get(w, 0))[0]
 
         if load_map.get(least_loaded_worker, 0) >= max_rows_per_worker:
-            continue # Skip if all workers are at capacity
+            continue
 
         job_id = f"{least_loaded_worker}-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}-{row_id}"
 
@@ -84,7 +84,6 @@ def run_diagnostics(all_rows):
         row_id = row.get("Row")
         status = row.get("Status")
         
-        # Check for stale jobs
         if status.startswith("Processing:"):
             last_attempted = row.get("Last Attempted")
             try:
@@ -96,7 +95,6 @@ def run_diagnostics(all_rows):
             except (ValueError, TypeError):
                 continue
 
-        # Check for repeated failures
         error_count = getProgressErrorCount(row_id)
         if error_count >= 3:
             reason = f"Task '{status}' failed {error_count} times."
@@ -109,9 +107,12 @@ def runManagerPipeline():
     """
     log_action("Manager", "Pipeline Start", "Fetching all actionable rows.", agent="Manager")
     
-    # --- Step 1: Fetch all actionable data ONCE ---
     try:
         result = call_gas_function("getRowsNeedingProcessing", {})
+        log_action("Manager", "Data Received", f"Received {len(result.get('rows', []))} rows from GAS.", agent="Manager")
+        if result.get('rows'):
+            log_action("Manager", "Data Sample", json.dumps(result['rows'][0], indent=2), agent="Manager")
+
         all_rows = result.get("rows", [])
         if not all_rows:
             log_action("Manager", "Pipeline Info", "No actionable rows found in the sheet.", agent="Manager")
@@ -120,35 +121,33 @@ def runManagerPipeline():
         log_action("Manager", "Pipeline Error", f"Could not fetch rows: {e}", agent="Manager")
         return
 
-    # --- Step 2: Process the data in memory ---
     worker_pool = ["worker1", "worker2"]
     unassigned_rows = [r for r in all_rows if not r.get("Assigned Worker", "").strip()]
     
-    # Create a load map from the fetched data
     load_map = {}
     for r in all_rows:
         worker = r.get("Assigned Worker", "").strip()
         if worker:
             load_map[worker] = load_map.get(worker, 0) + 1
 
-    # Step 2a: Assign jobs
     assign_unclaimed_jobs(unassigned_rows, worker_pool, load_map)
+    
+    # We must refetch data after assignments to ensure workers get the new jobs
+    try:
+        result = call_gas_function("getRowsNeedingProcessing", {})
+        all_rows_after_assign = result.get("rows", [])
+    except Exception as e:
+        log_action("Manager", "Pipeline Error", f"Could not refetch rows after assignment: {e}", agent="Manager")
+        return
 
-    # Step 2b: Run workers on their assigned jobs
     for worker_id in worker_pool:
-        jobs_for_worker = [r for r in all_rows if r.get("Assigned Worker") == worker_id]
+        jobs_for_worker = [r for r in all_rows_after_assign if r.get("Assigned Worker") == worker_id]
         if jobs_for_worker:
             run_worker_on_assigned_jobs(worker_id, jobs_for_worker)
 
-    # Step 2c: Run diagnostics on the initial state
-    run_diagnostics(all_rows)
+    run_diagnostics(all_rows_after_assign)
 
     log_action("Manager", "Pipeline Complete", "Full processing cycle finished.", agent="Manager")
-
-
-def getWorkerLoadMap():
-    # This is now a helper and doesn't call the API
-    return {}
 
 def determine_next_status(workflow_type, current_status):
     steps = workflow_steps.get(workflow_type, [])
