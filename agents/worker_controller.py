@@ -15,7 +15,6 @@ def run_manager_pipeline_endpoint():
         return jsonify({"status": "ok", "message": "Full pipeline executed."}), 200
     except Exception as e:
         print(f"🚨 HANDLER ERROR: {e}")
-        # Log the error to the sheet if possible
         try:
             from api.api_gateway import log_action
             log_action("Manager Trigger", "Critical Error", str(e))
