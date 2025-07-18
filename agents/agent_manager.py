@@ -238,3 +238,52 @@ def incrementProgressErrorCount(row_number):
 def getProgressErrorCount(row_number):
     from api.api_gateway import call_gas_function
     return call_gas_function("getProgressErrorCount", {"row": row_number}).get("count", 0)
+
+def run_batch_rows():
+    """
+    New manager trigger to process rows using the worker controller.
+    Also logs results and handles archive or escalation logic.
+    """
+    from api.api_gateway import call_gas_function, log_action
+    from worker_controller import run_worker_for_row
+    from queue_gas_call import queue_gas_call
+    import datetime
+
+    try:
+        result = call_gas_function("getRowsNeedingProcessing", {})
+        rows = result.get("rows", [])
+    except Exception as e:
+        log_action("Manager", "Error", f"Failed to fetch rows: {e}")
+        return
+
+    now = datetime.datetime.utcnow()
+    processed = 0
+
+    for row in rows:
+        try:
+            row_id = row.get("Row")
+            job_id = row.get("Job ID")
+            status = row.get("Status")
+            log_action(f"Row {row_id}", "Dispatched", f"Status: {status}")
+
+            run_worker_for_row(row)
+            processed += 1
+
+            queue_gas_call("writeToLog", {
+                "job_id": job_id,
+                "message": f"✅ Worker processed: {status}",
+                "level": "info"
+            })
+
+            if status == "Completed":
+                queue_gas_call("archiveRow", {"row": row_id})
+
+        except Exception as e:
+            log_action(f"Row {row.get('Row')}", "Error", str(e), agent="Manager")
+            queue_gas_call("updateRowError", {
+                "row": row.get("Row"),
+                "error_message": str(e)
+            })
+
+    log_action("Manager", "BatchRun", f"✔️ Finished batch: {processed} rows processed")
+

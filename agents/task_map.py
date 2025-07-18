@@ -14,5 +14,13 @@ fn_map = {
     "Move Files": "moveFilesAndImagesToFolder",
     "Generate Mockups": "generateMockupsFromDrive",
     "Create JSON": "buildMockupJsonFromFolderStructure",
-    "Create PDF": "processCreatePDF"
+    "Create PDF": "processCreatePDF",
+    "Suggest Next Action": "suggest_next_action_for_row",
+    "Update Image Metadata": "updateImageMetadata",
+    "Generate XY": "generateXYFromSample",
+    "Write Thinking": "writeToThinkingTab",
+    "Write Log": "writeToLog",
+    "Update Status": "updateRowStatus",
+    "Archive Row": "archiveRow",
+    "Log Error": "updateRowError"
 }
