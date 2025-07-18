@@ -8,14 +8,14 @@ import json
 # ------------------------------- #
 GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbwgUgALGV2aACKoGg0a9tOlY2BDj5xx_lTV_ukoLFHUGDFdZvOlBh_qYTYwXXNeo0bl/exec"
 LOG_FUNCTION        = "logAgentAction"
-GET_ROWS_FUNCTION   = "getRowsNeedingProcessing"
-MAX_ROWS_PER_RUN    = 20
-COOLDOWN_MINUTES    = 1
 
 # ------------------------------- #
 #        Helper Functions         #
 # ------------------------------- #
 def call_gas_function(function_name, params=None, timeout=30):
+    """
+    Calls a function in the Google Apps Script project.
+    """
     url = f"{GAS_BASE_URL}?function={function_name}"
 
     print("\n========== GAS CALL DEBUG ==========")
@@ -25,7 +25,7 @@ def call_gas_function(function_name, params=None, timeout=30):
 
     try:
         if not params or (isinstance(params, dict) and not params):
-            # No params: use GET (like Apps Script UI/test)
+            # No params: use GET
             response = requests.get(url, timeout=timeout)
         else:
             # With params: use POST
@@ -45,13 +45,16 @@ def call_gas_function(function_name, params=None, timeout=30):
 
         if not data.get("success", False):
             raise Exception(f"{function_name} error: {data.get('error', 'Unknown error')}")
-        # Most functions return {"success": True, ...}; some wrap their results
-        return data.get("result", data)  # Prefer .result, else return full object
+        
+        return data.get("result", data)
     except requests.exceptions.RequestException as e:
         print(f"❌ {function_name} failed: {str(e)}")
         raise Exception(f"{function_name} failed: {str(e)}")
 
 def log_action(action, outcome, notes, agent="Worker"):
+    """
+    Logs an action to the Google Sheet.
+    """
     params = {
         "timestamp": datetime.datetime.now().isoformat(),
         "action":    action,
@@ -65,130 +68,12 @@ def log_action(action, outcome, notes, agent="Worker"):
         print(f"⚠️ Failed to log action: {e}")
 
 # ------------------------------- #
-#           Main Runner           #
-# ------------------------------- #
-def run_etsy_agent():
-    if call_gas_function("isWorkerActive").get("active"):
-        log_action("Batch Skipped", "Worker already active", "")
-        return {"status": "skipped", "message": "Worker already running"}
-
-    call_gas_function("markWorkerActive")
-    log_action("Batch Start", "Initiated", "", agent="Worker")
-
-    summary_logs = []
-    processed    = 0
-    now          = datetime.datetime.now()
-    response     = None
-
-    try:
-        response_json = call_gas_function(GET_ROWS_FUNCTION)
-        print("🧪 Raw GAS Response:", json.dumps(response_json, indent=2))
-
-        rows = response_json.get("rows", [])
-        print(f"📦 Fetched {len(rows)} rows for processing")
-
-        from collections import defaultdict
-        grouped_rows = defaultdict(list)
-        for row in rows:
-            grouped_rows[str(row.get("Status") or "").strip()].append(row)
-
-        fn_map = {
-            "Download Image": "downloadImagesToDrive",
-            "Create Thumbnail": "copyResizeImageAndStoreUrl",
-            "Describe Image": "processImagesWithOpenAI",
-            "Add Mockups": "updateImagesFromMockupFolders",
-            "Upscale Image": "copyUpscaleImageAndStoreVariants",
-            "Generate Mockup JSON": "generateMockupJson",
-            "Upload Files": "uploadDigitalFiles",
-            "Upload Images": "uploadImageAssets",
-            "Vectorize": "vectorizeSourceSvg",
-            "Create Description": "findReplaceInDescription",
-            "Create Folder": "processCreateFolders",
-            "Rename Files": "updateFileNamesWithImageName",
-            "Move Files": "moveFilesAndImagesToFolder",
-            "Generate Mockups": "generateMockupsFromDrive",
-            "Create JSON": "buildMockupJsonFromFolderStructure",
-            "Create PDF": "processCreatePDF"
-        }
-
-        for status, group in grouped_rows.items():
-            if processed >= MAX_ROWS_PER_RUN:
-                break
-
-            fn_name = fn_map.get(status)
-            if not fn_name:
-                for row in group:
-                    log_action(f"Row {row['Row']}", "Skipped", f"Status not actionable: {status}")
-                continue
-
-            try:
-                print(f"📤 Triggering GAS function: {fn_name} for status group '{status}' ({len(group)} rows)")
-                response = call_gas_function(fn_name)
-
-                if response is None:
-                    raise Exception(f"Function {status} failed to return any response.")
-                if not isinstance(response, dict) or response.get("error"):
-                    raise Exception(f"Function {status} returned error: {response.get('error', 'Unknown')}")
-
-                for row in group:
-                    row_number = row.get("Row")
-                    call_gas_function("updateLastAttempted", {
-                        "row": row_number,
-                        "timestamp": now.isoformat()
-                    })
-                    call_gas_function("updateRowProgress", {"row": row_number, "progress": "Processing"})
-                    log_action(f"Row {row_number}", "Success", f"{status} succeeded via batch call")
-                    summary_logs.append(f"✅ Row {row_number} succeeded for status: {status}")
-                    processed += 1
-                    if processed >= MAX_ROWS_PER_RUN:
-                        break
-
-            except Exception as e:
-                for row in group:
-                    row_number = row.get("Row")
-                    err_msg = f"❌ Row {row_number} error during batch call: {e}"
-                    log_action(f"Row {row_number}", "Error", err_msg)
-                    summary_logs.append(err_msg)
-                    manager_handle_issue(row, str(e))
-                    if processed >= MAX_ROWS_PER_RUN:
-                        break
-
-        result = {"status": "success", "rows_processed": processed, "response": response}
-        log_action("Batch Processed", f"{processed} rows", "End of run", agent="Worker")
-
-    except Exception as e:
-        summary_logs.append(f"🔥 Critical error: {e}")
-        result = {"status": "error", "message": str(e)}
-        log_action("Batch Error", "Critical Failure", str(e), agent="Worker")
-    finally:
-        handle_post_run_summary(summary_logs, result)
-
-        if any("❌" in log or "error" in log.lower() or "🔥" in log for log in summary_logs):
-            call_gas_function("sendAgentSummaryEmail", {
-                "status": result.get("status"),
-                "logs":   summary_logs,
-                "summary": f"{processed} rows processed by Worker at "
-                           f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
-            })
-
-        try:
-            call_gas_function("runMissingDataAdvisor")
-            log_action("Manager Agent", "Invoked", "Triggered after batch run", agent="Worker")
-        except Exception as e:
-            log_action("Manager Agent", "Error", f"Failed to trigger runMissingDataAdvisor: {e}", agent="Worker")
-
-        try:
-            call_gas_function("runManagerPipeline")
-            log_action("Manager Agent", "Invoked", "Triggered runManagerPipeline after batch", agent="Worker")
-        except Exception as e:
-            log_action("Manager Agent", "Error", f"Failed to trigger runManagerPipeline: {e}", agent="Worker")
-
-        return result
-
-# ------------------------------- #
 #         Error Escalation        #
 # ------------------------------- #
 def manager_handle_issue(row, error_msg):
+    """
+    Handles errors and escalates them to the manager.
+    """
     row_number = row.get("Row")
 
     try:
