@@ -14,11 +14,13 @@ LOG_FUNCTION        = "logAgentAction"
 # ------------------------------- #
 def call_gas_function(function_name, params=None, timeout=30):
     """
-    Calls a function in the Google Apps Script project with enhanced debug logging.
+    Calls a Google Apps Script web app function with proper POST body and debug logging.
     """
+    url = GAS_BASE_URL  # ❗ No longer appending ?function=... to the URL
+
     if params is None:
         params = {}
-    url = f"{GAS_BASE_URL}?function={function_name}"
+    params["function"] = function_name  # ✅ Ensure function name is in the POST body
 
     print("\n========== GAS CALL DEBUG ==========")
     print(f"→ Function: {function_name}")
@@ -26,24 +28,17 @@ def call_gas_function(function_name, params=None, timeout=30):
     print(f"→ Payload: {json.dumps(params)}")
 
     try:
-        # Use POST for all function calls that include parameters
         response = requests.post(url, json=params, timeout=timeout)
 
         print(f"→ Status Code: {response.status_code}")
         print(f"→ Raw Response: {response.text}")
 
-        # Try decoding the JSON
-        try:
-            data = response.json()
-            print("→ Parsed JSON Response:", json.dumps(data, indent=2))
-        except json.JSONDecodeError as e:
-            print(f"❌ JSON decode failed: {e}")
-            raise Exception(f"{function_name} returned invalid JSON.")
+        data = response.json()
+        print("→ Parsed JSON Response:", json.dumps(data, indent=2))
 
         if not data.get("success", False):
             raise Exception(f"{function_name} error: {data.get('error', 'Unknown error')}")
 
-        # If result is nested (as in {"success": true, "result": {...}}), return just result
         return data.get("result", data)
 
     except requests.exceptions.RequestException as e:
@@ -52,6 +47,7 @@ def call_gas_function(function_name, params=None, timeout=30):
     except Exception as e:
         print(f"❌ GAS function error: {e}")
         raise
+
 
 def log_action(action, outcome, notes, agent="Worker"):
     """
