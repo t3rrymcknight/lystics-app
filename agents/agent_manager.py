@@ -105,19 +105,26 @@ def runManagerPipeline():
     """
     The main orchestration function. Fetches data once, then processes it.
     """
+    print("🟢 Manager pipeline started.")
     log_action("Manager", "Pipeline Start", "Fetching all actionable rows.", agent="Manager")
     
     try:
         result = call_gas_function("getRowsNeedingProcessing", {})
-        log_action("Manager", "Data Received", f"Received {len(result.get('rows', []))} rows from GAS.", agent="Manager")
-        if result.get('rows'):
-            log_action("Manager", "Data Sample", json.dumps(result['rows'][0], indent=2), agent="Manager")
+        print("📦 GAS result object:", json.dumps(result, indent=2))  # DEBUG
 
-        all_rows = result.get("rows", [])
+        rows = result.get("rows", []) if isinstance(result, dict) else []
+        print(f"✅ Parsed {len(rows)} rows from GAS.")  # DEBUG
+
+        log_action("Manager", "Data Received", f"Received {len(rows)} rows from GAS.", agent="Manager")
+        if rows:
+            log_action("Manager", "Data Sample", json.dumps(rows[0], indent=2), agent="Manager")
+
+        all_rows = rows
         if not all_rows:
             log_action("Manager", "Pipeline Info", "No actionable rows found in the sheet.", agent="Manager")
             return
     except Exception as e:
+        print(f"❌ Exception during GAS fetch: {e}")
         log_action("Manager", "Pipeline Error", f"Could not fetch rows: {e}", agent="Manager")
         return
 
@@ -135,19 +142,24 @@ def runManagerPipeline():
     # We must refetch data after assignments to ensure workers get the new jobs
     try:
         result = call_gas_function("getRowsNeedingProcessing", {})
-        all_rows_after_assign = result.get("rows", [])
+        all_rows_after_assign = result.get("rows", []) if isinstance(result, dict) else []
+        print(f"🔄 Refetched {len(all_rows_after_assign)} rows after assignment.")  # DEBUG
     except Exception as e:
+        print(f"❌ Exception during GAS refetch: {e}")
         log_action("Manager", "Pipeline Error", f"Could not refetch rows after assignment: {e}", agent="Manager")
         return
 
     for worker_id in worker_pool:
         jobs_for_worker = [r for r in all_rows_after_assign if r.get("Assigned Worker") == worker_id]
         if jobs_for_worker:
+            print(f"🚀 Running {len(jobs_for_worker)} jobs for {worker_id}")  # DEBUG
             run_worker_on_assigned_jobs(worker_id, jobs_for_worker)
 
     run_diagnostics(all_rows_after_assign)
 
+    print("✅ Manager pipeline complete.")
     log_action("Manager", "Pipeline Complete", "Full processing cycle finished.", agent="Manager")
+
 
 def determine_next_status(workflow_type, current_status):
     steps = workflow_steps.get(workflow_type, [])
