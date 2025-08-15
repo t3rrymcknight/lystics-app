@@ -6,7 +6,7 @@ import json
 # ------------------------------- #
 #  Google Apps Script Endpoints   #
 # ------------------------------- #
-GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbxMmR1RCvdzLVdX6F2cntbfyC2VNSn38OO3b6dCsDjqMu_0T5L9h-AfRtGyAjHgPMYz/exec"
+GAS_BASE_URL        = "https://script.google.com/macros/s/AKfycbwe-hNS2I_uJ_VCeD6b0HBdldLb0CLgSY92ZsmrA9bfeA94iSMsghEBGsG24RFBizUJ/exec"
 LOG_FUNCTION        = "logAgentAction"
 
 # ------------------------------- #
